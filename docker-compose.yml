@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  cvat-queue:
+    build: .
+    # Or use from Docker Hub:
+    # image: YOUR_DOCKERHUB_USERNAME/cvat-queue:latest
+    container_name: cvat-queue
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist database
+      - ./data:/app/data
+      # Persist backups
+      - ./backups:/app/backups
+    environment:
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=production
+      - WORKERS=4
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

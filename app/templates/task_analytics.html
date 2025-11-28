@@ -1,0 +1,695 @@
+{% extends "base.html" %}
+{% block title %}Analytics - {{ task.name if task else 'Task' }} - CVAT Queue{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <a href="/task/{{ task_id }}" class="text-indigo-600 hover:text-indigo-800 text-sm">&larr; Back to Task</a>
+    <div class="flex justify-between items-start mt-2">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">
+                {% if task %}{{ task.name }}{% else %}Task{% endif %} - Analytics
+            </h1>
+            <p class="text-gray-500">Task ID: {{ task_id }}</p>
+        </div>
+
+        <div class="flex gap-2">
+            <button onclick="generateReport()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm">
+                Export Report
+            </button>
+            <form method="POST" action="/task/{{ task_id }}/analytics/refresh">
+                <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">
+                    Refresh Data
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Timeline Stats -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-lg shadow p-4">
+        <h3 class="text-sm font-medium text-gray-500">Snapshots</h3>
+        <p class="text-2xl font-bold text-gray-800 mt-2">{{ history|length }}</p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4">
+        <h3 class="text-sm font-medium text-gray-500">Latest Count</h3>
+        <p class="text-2xl font-bold text-indigo-600 mt-2">
+            {% if history|length > 0 %}
+                {{ history[-1].annotation_count }}
+            {% else %}
+                -
+            {% endif %}
+        </p>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-4">
+        <h3 class="text-sm font-medium text-gray-500">Change Since First</h3>
+        <p class="text-2xl font-bold text-green-600 mt-2">
+            {% if history|length > 1 %}
+                +{{ history[-1].annotation_count - history[0].annotation_count }}
+            {% else %}
+                -
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<!-- Annotation Timeline Chart -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-700 mb-4">Annotation Timeline</h2>
+
+    {% if history %}
+    <div style="height: 350px;">
+        <canvas id="annotationChart"></canvas>
+    </div>
+    {% else %}
+    <div class="text-center py-12 text-gray-500">
+        <p>No data available yet.</p>
+        <p class="text-sm mt-2">Click "Refresh Data" to capture the first snapshot.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Annotations by Job Toggle Section -->
+<div class="bg-white rounded-lg shadow mb-6">
+    <div class="px-4 py-3 border-b flex justify-between items-center">
+        <h2 class="font-semibold text-gray-700">Annotations by Job</h2>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="jobs-toggle" class="sr-only peer" onchange="toggleJobsData()">
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            <span class="ml-3 text-sm font-medium text-gray-700" id="toggle-label">Off</span>
+        </label>
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="jobs-loading" class="hidden p-8 text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <p class="mt-2 text-gray-500">Loading job data from CVAT...</p>
+    </div>
+
+    <!-- Jobs Stats (dynamic) -->
+    <div id="jobs-stats" class="hidden p-4 border-b">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Total Jobs</h3>
+                <p class="text-xl font-bold text-gray-800" id="stat-total-jobs">-</p>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Total Annotations</h3>
+                <p class="text-xl font-bold text-indigo-600" id="stat-total-annotations">-</p>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Total Frames</h3>
+                <p class="text-xl font-bold text-gray-800" id="stat-total-frames">-</p>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Avg Ann/Job</h3>
+                <p class="text-xl font-bold text-purple-600" id="stat-avg-annotations">-</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Jobs Table -->
+    <div id="jobs-table" class="hidden">
+        <table class="w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job ID</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assignee</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frames</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Annotations</th>
+                </tr>
+            </thead>
+            <tbody id="jobs-tbody" class="divide-y">
+                <!-- Jobs will be loaded here dynamically -->
+            </tbody>
+            <tfoot class="bg-gray-50">
+                <tr>
+                    <td colspan="5" class="px-4 py-3 text-sm font-medium text-gray-700 text-right">Total:</td>
+                    <td class="px-4 py-3 text-sm text-right font-bold text-indigo-600" id="jobs-total-annotations">-</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+<!-- Collapsible Snapshot History -->
+{% if history %}
+<div class="bg-white rounded-lg shadow mb-6">
+    <div class="px-4 py-3 border-b flex justify-between items-center cursor-pointer" onclick="toggleHistoryTable()">
+        <h2 class="font-semibold text-gray-700">Snapshot History</h2>
+        <span id="history-toggle-icon" class="text-gray-500 transform transition-transform">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+        </span>
+    </div>
+
+    <div id="history-table" class="hidden">
+        <table class="w-full">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date & Time</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Annotation Count</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Change</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for snapshot in history %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-sm text-gray-800">
+                        {{ snapshot.snapshot_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </td>
+                    <td class="px-4 py-3 text-sm font-medium text-gray-800">
+                        {{ snapshot.annotation_count }}
+                    </td>
+                    <td class="px-4 py-3 text-sm">
+                        {% if loop.index0 > 0 %}
+                            {% set change = snapshot.annotation_count - history[loop.index0 - 1].annotation_count %}
+                            {% if change > 0 %}
+                                <span class="text-green-600">+{{ change }}</span>
+                            {% elif change < 0 %}
+                                <span class="text-red-600">{{ change }}</span>
+                            {% else %}
+                                <span class="text-gray-400">0</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-gray-400">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Report Modal -->
+<div id="report-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto">
+        <div class="px-6 py-4 border-b flex justify-between items-center sticky top-0 bg-white">
+            <h2 class="text-xl font-bold text-gray-800">Analytics Report</h2>
+            <div class="flex gap-2">
+                <button onclick="exportCSV()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                    Export CSV
+                </button>
+                <button onclick="printReport()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                    Print
+                </button>
+                <button onclick="closeReportModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+                    Close
+                </button>
+            </div>
+        </div>
+        <div id="report-content" class="p-6">
+            <!-- Report content will be generated here -->
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<script>
+    // Store loaded job data
+    let loadedJobsData = null;
+
+    // Toggle history table
+    function toggleHistoryTable() {
+        const table = document.getElementById('history-table');
+        const icon = document.getElementById('history-toggle-icon');
+        table.classList.toggle('hidden');
+        icon.classList.toggle('rotate-180');
+    }
+
+    // Toggle jobs data with fetch
+    async function toggleJobsData() {
+        const toggle = document.getElementById('jobs-toggle');
+        const label = document.getElementById('toggle-label');
+        const loading = document.getElementById('jobs-loading');
+        const stats = document.getElementById('jobs-stats');
+        const table = document.getElementById('jobs-table');
+
+        if (toggle.checked) {
+            label.textContent = 'On';
+
+            // If data not loaded, fetch it
+            if (!loadedJobsData) {
+                loading.classList.remove('hidden');
+                stats.classList.add('hidden');
+                table.classList.add('hidden');
+
+                try {
+                    const response = await fetch('/task/{{ task_id }}/analytics/jobs', {
+                        headers: { 'X-Requested-With': 'fetch' }
+                    });
+
+                    if (!response.ok) throw new Error('Failed to load jobs data');
+
+                    loadedJobsData = await response.json();
+                    renderJobsData(loadedJobsData);
+                } catch (error) {
+                    console.error('Error loading jobs:', error);
+                    loading.innerHTML = '<p class="text-red-500">Failed to load job data. Please try again.</p>';
+                    return;
+                }
+            }
+
+            loading.classList.add('hidden');
+            stats.classList.remove('hidden');
+            table.classList.remove('hidden');
+        } else {
+            label.textContent = 'Off';
+            stats.classList.add('hidden');
+            table.classList.add('hidden');
+        }
+    }
+
+    // Render jobs data
+    function renderJobsData(data) {
+        // Update stats
+        document.getElementById('stat-total-jobs').textContent = data.total_jobs;
+        document.getElementById('stat-total-annotations').textContent = data.total_annotations;
+        document.getElementById('stat-total-frames').textContent = data.total_frames;
+        document.getElementById('stat-avg-annotations').textContent =
+            data.total_jobs > 0 ? (data.total_annotations / data.total_jobs).toFixed(1) : '0';
+
+        // Build table rows
+        const tbody = document.getElementById('jobs-tbody');
+        tbody.innerHTML = data.jobs.map(job => `
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 font-mono">${job.id}</td>
+                <td class="px-4 py-3 text-sm text-gray-600">${job.assignee}</td>
+                <td class="px-4 py-3 text-sm">
+                    <span class="px-2 py-1 text-xs rounded ${getStageClass(job.stage)}">
+                        ${job.stage}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-sm">
+                    <span class="px-2 py-1 text-xs rounded ${getStateClass(job.state)}">
+                        ${job.state}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600">${job.frame_count}</td>
+                <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-600">${job.annotation_count}</td>
+            </tr>
+        `).join('');
+
+        document.getElementById('jobs-total-annotations').textContent = data.total_annotations;
+    }
+
+    function getStageClass(stage) {
+        switch(stage) {
+            case 'annotation': return 'bg-yellow-100 text-yellow-700';
+            case 'validation': return 'bg-blue-100 text-blue-700';
+            case 'acceptance': return 'bg-green-100 text-green-700';
+            default: return 'bg-gray-100 text-gray-700';
+        }
+    }
+
+    function getStateClass(state) {
+        switch(state) {
+            case 'completed': return 'bg-green-100 text-green-700';
+            case 'in progress': return 'bg-blue-100 text-blue-700';
+            case 'rejected': return 'bg-red-100 text-red-700';
+            default: return 'bg-gray-100 text-gray-700';
+        }
+    }
+
+    // Report data (timeline only by default)
+    const reportData = {
+        taskName: '{{ task.name if task else "Task " ~ task_id }}',
+        taskId: {{ task_id }},
+        generatedAt: new Date().toISOString(),
+        timeline: [
+            {% for snapshot in history %}
+            {
+                time: '{{ snapshot.snapshot_time.strftime("%Y-%m-%d %H:%M:%S") }}',
+                count: {{ snapshot.annotation_count }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    };
+
+    function generateReport() {
+        const modal = document.getElementById('report-modal');
+        const content = document.getElementById('report-content');
+
+        let html = `
+            <div class="print-content">
+                <div class="text-center mb-6">
+                    <h1 class="text-2xl font-bold text-gray-800">${reportData.taskName}</h1>
+                    <p class="text-gray-500">Task ID: ${reportData.taskId} | Generated: ${new Date().toLocaleString()}</p>
+                </div>
+        `;
+
+        // Add jobs data if loaded
+        if (loadedJobsData) {
+            const jobsByAssignee = {};
+            loadedJobsData.jobs.forEach(job => {
+                const assignee = job.assignee || 'Unassigned';
+                if (!jobsByAssignee[assignee]) {
+                    jobsByAssignee[assignee] = { jobs: 0, annotations: 0, frames: 0 };
+                }
+                jobsByAssignee[assignee].jobs++;
+                jobsByAssignee[assignee].annotations += job.annotation_count;
+                jobsByAssignee[assignee].frames += job.frame_count;
+            });
+
+            const jobsByStage = {};
+            loadedJobsData.jobs.forEach(job => {
+                if (!jobsByStage[job.stage]) {
+                    jobsByStage[job.stage] = { count: 0, annotations: 0 };
+                }
+                jobsByStage[job.stage].count++;
+                jobsByStage[job.stage].annotations += job.annotation_count;
+            });
+
+            html += `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-gray-50 rounded p-3 text-center">
+                        <div class="text-2xl font-bold text-gray-800">${loadedJobsData.total_jobs}</div>
+                        <div class="text-sm text-gray-500">Total Jobs</div>
+                    </div>
+                    <div class="bg-gray-50 rounded p-3 text-center">
+                        <div class="text-2xl font-bold text-indigo-600">${loadedJobsData.total_annotations}</div>
+                        <div class="text-sm text-gray-500">Total Annotations</div>
+                    </div>
+                    <div class="bg-gray-50 rounded p-3 text-center">
+                        <div class="text-2xl font-bold text-gray-800">${loadedJobsData.total_frames}</div>
+                        <div class="text-sm text-gray-500">Total Frames</div>
+                    </div>
+                    <div class="bg-gray-50 rounded p-3 text-center">
+                        <div class="text-2xl font-bold text-purple-600">${loadedJobsData.total_jobs > 0 ? (loadedJobsData.total_annotations / loadedJobsData.total_jobs).toFixed(1) : 0}</div>
+                        <div class="text-sm text-gray-500">Avg Ann/Job</div>
+                    </div>
+                </div>
+
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">Annotations by Assignee</h3>
+                <table class="w-full mb-6 border">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-4 py-2 text-left border">Assignee</th>
+                            <th class="px-4 py-2 text-right border">Jobs</th>
+                            <th class="px-4 py-2 text-right border">Frames</th>
+                            <th class="px-4 py-2 text-right border">Annotations</th>
+                            <th class="px-4 py-2 text-right border">Avg/Job</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            Object.entries(jobsByAssignee).forEach(([assignee, data]) => {
+                const avg = data.jobs > 0 ? (data.annotations / data.jobs).toFixed(1) : 0;
+                html += `
+                    <tr>
+                        <td class="px-4 py-2 border">${assignee}</td>
+                        <td class="px-4 py-2 text-right border">${data.jobs}</td>
+                        <td class="px-4 py-2 text-right border">${data.frames}</td>
+                        <td class="px-4 py-2 text-right border font-semibold">${data.annotations}</td>
+                        <td class="px-4 py-2 text-right border">${avg}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">Jobs by Stage</h3>
+                <table class="w-full mb-6 border">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-4 py-2 text-left border">Stage</th>
+                            <th class="px-4 py-2 text-right border">Jobs</th>
+                            <th class="px-4 py-2 text-right border">Annotations</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            Object.entries(jobsByStage).forEach(([stage, data]) => {
+                html += `
+                    <tr>
+                        <td class="px-4 py-2 border capitalize">${stage}</td>
+                        <td class="px-4 py-2 text-right border">${data.count}</td>
+                        <td class="px-4 py-2 text-right border font-semibold">${data.annotations}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">All Jobs Detail</h3>
+                <table class="w-full mb-6 border text-sm">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-3 py-2 text-left border">Job ID</th>
+                            <th class="px-3 py-2 text-left border">Assignee</th>
+                            <th class="px-3 py-2 text-left border">Stage</th>
+                            <th class="px-3 py-2 text-left border">State</th>
+                            <th class="px-3 py-2 text-right border">Frames</th>
+                            <th class="px-3 py-2 text-right border">Annotations</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            loadedJobsData.jobs.forEach(job => {
+                html += `
+                    <tr>
+                        <td class="px-3 py-2 border font-mono">${job.id}</td>
+                        <td class="px-3 py-2 border">${job.assignee}</td>
+                        <td class="px-3 py-2 border capitalize">${job.stage}</td>
+                        <td class="px-3 py-2 border capitalize">${job.state}</td>
+                        <td class="px-3 py-2 text-right border">${job.frame_count}</td>
+                        <td class="px-3 py-2 text-right border font-semibold">${job.annotation_count}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+        } else {
+            html += `
+                <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-6">
+                    <p class="text-yellow-700">
+                        <strong>Note:</strong> Job data is not loaded. Enable "Annotations by Job" toggle to include job details in the report.
+                    </p>
+                </div>
+            `;
+        }
+
+        // Timeline history
+        if (reportData.timeline.length > 0) {
+            html += `
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">Timeline History</h3>
+                <table class="w-full border text-sm">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-3 py-2 text-left border">Date & Time</th>
+                            <th class="px-3 py-2 text-right border">Annotations</th>
+                            <th class="px-3 py-2 text-right border">Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            reportData.timeline.forEach((snapshot, index) => {
+                const change = index > 0 ? snapshot.count - reportData.timeline[index - 1].count : 0;
+                const changeClass = change > 0 ? 'text-green-600' : (change < 0 ? 'text-red-600' : 'text-gray-400');
+                const changeStr = index > 0 ? (change > 0 ? `+${change}` : change) : '-';
+                html += `
+                    <tr>
+                        <td class="px-3 py-2 border">${snapshot.time}</td>
+                        <td class="px-3 py-2 text-right border font-semibold">${snapshot.count}</td>
+                        <td class="px-3 py-2 text-right border ${changeClass}">${changeStr}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+        }
+
+        html += '</div>';
+
+        content.innerHTML = html;
+        modal.classList.remove('hidden');
+    }
+
+    function closeReportModal() {
+        document.getElementById('report-modal').classList.add('hidden');
+    }
+
+    function exportCSV() {
+        let csv = '';
+
+        if (loadedJobsData) {
+            csv = 'Job ID,Assignee,Stage,State,Frames,Annotations\n';
+            loadedJobsData.jobs.forEach(job => {
+                csv += `${job.id},"${job.assignee}",${job.stage},${job.state},${job.frame_count},${job.annotation_count}\n`;
+            });
+            csv += '\n';
+        }
+
+        csv += 'Timeline History\nDate & Time,Annotation Count,Change\n';
+        reportData.timeline.forEach((snapshot, index) => {
+            const change = index > 0 ? snapshot.count - reportData.timeline[index - 1].count : 0;
+            csv += `"${snapshot.time}",${snapshot.count},${change}\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analytics_task_${reportData.taskId}_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    }
+
+    function printReport() {
+        const content = document.getElementById('report-content').innerHTML;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Analytics Report - ${reportData.taskName}</title>
+                <script src="https://cdn.tailwindcss.com"><\/script>
+                <style>
+                    @media print {
+                        body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+                    }
+                </style>
+            </head>
+            <body class="p-8">
+                ${content}
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.onload = () => {
+            printWindow.print();
+        };
+    }
+
+    // Chart with data labels - increased height
+    {% if history %}
+    const ctx = document.getElementById('annotationChart').getContext('2d');
+
+    Chart.register(ChartDataLabels);
+
+    const data = {
+        labels: [
+            {% for snapshot in history %}
+                '{{ snapshot.snapshot_time.strftime("%m/%d %H:%M") }}'{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ],
+        datasets: [{
+            label: 'Annotation Count',
+            data: [
+                {% for snapshot in history %}
+                    {{ snapshot.annotation_count }}{% if not loop.last %},{% endif %}
+                {% endfor %}
+            ],
+            borderColor: 'rgb(79, 70, 229)',
+            backgroundColor: 'rgba(79, 70, 229, 0.1)',
+            tension: 0.3,
+            fill: true,
+            pointRadius: 6,
+            pointHoverRadius: 10
+        }]
+    };
+
+    const config = {
+        type: 'line',
+        data: data,
+        plugins: [ChartDataLabels],
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    top: 30,
+                    right: 20,
+                    bottom: 10,
+                    left: 10
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false,
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) label += ': ';
+                            label += context.parsed.y;
+                            if (context.dataIndex > 0) {
+                                const change = context.parsed.y - data.datasets[0].data[context.dataIndex - 1];
+                                label += ` (${change >= 0 ? '+' : ''}${change})`;
+                            }
+                            return label;
+                        }
+                    }
+                },
+                datalabels: {
+                    align: 'top',
+                    anchor: 'end',
+                    offset: 8,
+                    color: 'rgb(79, 70, 229)',
+                    font: {
+                        weight: 'bold',
+                        size: 12
+                    },
+                    formatter: function(value) {
+                        return value;
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    grace: '15%',
+                    ticks: {
+                        precision: 0
+                    }
+                },
+                x: {
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    };
+
+    new Chart(ctx, config);
+    {% endif %}
+</script>
+
+<style>
+    @media print {
+        .print-content { page-break-inside: avoid; }
+    }
+</style>
+{% endblock %}

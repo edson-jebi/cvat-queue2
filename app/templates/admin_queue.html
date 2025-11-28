@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Queue Assignment - CVAT Queue{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-800">Queue Assignment</h1>
+    <p class="text-gray-500">Assign jobs from the review queue to reviewers</p>
+</div>
+
+<!-- Bulk Assignment Section -->
+<div class="bg-white rounded-lg shadow mb-6 p-4">
+    <h2 class="text-lg font-semibold text-gray-700 mb-3">Bulk Assignment</h2>
+    <form method="POST" action="/admin/queue/assign-bulk" id="bulk-assign-form">
+        <div class="flex items-center gap-4">
+            <div class="flex-1">
+                <label class="block text-sm text-gray-600 mb-1">Select Reviewer</label>
+                <select name="reviewer_id" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">-- Select Reviewer --</option>
+                    {% for u in all_users %}
+                    <option value="{{ u.id }}">{{ u.username }}{% if u.is_admin %} (Admin){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex-1">
+                <label class="block text-sm text-gray-600 mb-1">Filter by Task</label>
+                <select id="task-filter" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">All Tasks</option>
+                    {% for task_name in task_names %}
+                    <option value="{{ task_name }}">{{ task_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="pt-6">
+                <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                    Assign Selected
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Jobs Table -->
+<div class="bg-white rounded-lg shadow">
+    {% if jobs %}
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-left">
+                    <input type="checkbox" id="select-all" class="rounded border-gray-300">
+                </th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job ID</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Task</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Completed By</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rejections</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for job in jobs %}
+            <tr class="hover:bg-gray-50 job-row" data-task="{{ job.task_name or '' }}">
+                <td class="px-4 py-3">
+                    <input type="checkbox" name="job_ids" value="{{ job.id }}" form="bulk-assign-form" class="job-checkbox rounded border-gray-300">
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600">
+                    <span class="font-mono">{{ job.cvat_job_id }}</span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-800">
+                    {{ job.task_name or 'Task ' ~ job.cvat_task_id }}
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600">
+                    {{ job.completed_by_username or '-' }}
+                </td>
+                <td class="px-4 py-3">
+                    <span class="px-2 py-1 text-xs rounded status-{{ job.status.value }}">
+                        {{ job.status.value | replace('_', ' ') | title }}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-sm">
+                    {% if job.rejection_count and job.rejection_count > 0 %}
+                    <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium" title="{{ job.last_rejection_notes or 'No notes' }}">
+                        {{ job.rejection_count }}x rejected
+                    </span>
+                    {% else %}
+                    <span class="text-gray-400">-</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-sm">
+                    {% if job.assigned_to_user %}
+                    <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                        {{ job.assigned_to_user.username }}
+                    </span>
+                    {% else %}
+                    <span class="text-gray-400">Unassigned</span>
+                    {% endif %}
+                </td>
+                <td class="px-4 py-3 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                        <!-- Individual Assignment -->
+                        <form method="POST" action="/admin/queue/{{ job.id }}/assign" class="inline-flex items-center gap-1">
+                            <select name="reviewer_id" required class="text-sm px-2 py-1 border rounded focus:ring-1 focus:ring-indigo-500">
+                                <option value="">Assign to...</option>
+                                {% for u in all_users %}
+                                <option value="{{ u.id }}" {% if job.assigned_to == u.id %}selected{% endif %}>
+                                    {{ u.username }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                                Assign
+                            </button>
+                        </form>
+                        {% if job.assigned_to %}
+                        <form method="POST" action="/admin/queue/{{ job.id }}/unassign" class="inline">
+                            <button type="submit" class="px-2 py-1 text-xs text-red-600 hover:text-red-800 border border-red-300 rounded hover:bg-red-50">
+                                Unassign
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="px-4 py-8 text-center text-gray-500">
+        No jobs in the queue to assign.
+    </div>
+    {% endif %}
+</div>
+
+<!-- Summary Stats -->
+{% if jobs %}
+<div class="mt-6 grid grid-cols-3 gap-4">
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="text-2xl font-bold text-gray-800">{{ jobs | length }}</div>
+        <div class="text-sm text-gray-500">Total Jobs in Queue</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="text-2xl font-bold text-blue-600">{{ jobs | selectattr('assigned_to') | list | length }}</div>
+        <div class="text-sm text-gray-500">Assigned</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-4">
+        <div class="text-2xl font-bold text-amber-600">{{ jobs | rejectattr('assigned_to') | list | length }}</div>
+        <div class="text-sm text-gray-500">Unassigned</div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+// Select all checkbox functionality
+document.getElementById('select-all')?.addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.job-checkbox');
+    const visibleRows = document.querySelectorAll('.job-row:not([style*="display: none"])');
+    visibleRows.forEach(row => {
+        const checkbox = row.querySelector('.job-checkbox');
+        if (checkbox) checkbox.checked = this.checked;
+    });
+});
+
+// Task filter functionality
+document.getElementById('task-filter')?.addEventListener('change', function() {
+    const selectedTask = this.value;
+    const rows = document.querySelectorAll('.job-row');
+
+    rows.forEach(row => {
+        if (!selectedTask || row.dataset.task === selectedTask) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+            // Uncheck hidden rows
+            const checkbox = row.querySelector('.job-checkbox');
+            if (checkbox) checkbox.checked = false;
+        }
+    });
+
+    // Reset select all checkbox
+    const selectAll = document.getElementById('select-all');
+    if (selectAll) selectAll.checked = false;
+});
+</script>
+{% endblock %}
