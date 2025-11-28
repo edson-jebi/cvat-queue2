@@ -26,13 +26,9 @@ COPY main.py .
 COPY gunicorn.conf.py .
 COPY app/ ./app/
 
-# Create directories for data persistence
-RUN mkdir -p /app/data /app/backups
-
-# Create non-root user for security
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
-USER appuser
+# Create directories for data persistence with proper permissions
+RUN mkdir -p /app/data /app/backups && \
+    chmod 777 /app/data /app/backups
 
 # Expose port
 EXPOSE 8000
