@@ -94,11 +94,15 @@ async def login(
         user.cvat_token = result
         user.cvat_host = cvat_host
     else:
+        # Check if this is the first user (make them admin)
+        user_count = await db.execute(select(User))
+        is_first_user = len(user_count.scalars().all()) == 0
+
         user = User(
             username=username,
             cvat_token=result,
             cvat_host=cvat_host,
-            is_admin=False
+            is_admin=is_first_user  # First user becomes admin
         )
         db.add(user)
 
