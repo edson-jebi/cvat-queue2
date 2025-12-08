@@ -2,13 +2,16 @@
 {% block title %}Validation Queue - CVAT Queue{% endblock %}
 
 {% block content %}
-<div class="mb-6 flex justify-between items-center">
+<div class="mb-10 flex justify-between items-start">
     <div>
-        <h1 class="text-2xl font-bold text-gray-800">{% if user.is_admin %}Validation Queue{% else %}My Assigned Jobs{% endif %}</h1>
-        <p class="text-gray-500">{% if user.is_admin %}Jobs waiting for review, grouped by task{% else %}Jobs assigned to you for review{% endif %}</p>
+        <h1 class="apple-title-2 text-gray-900">{% if user.is_admin %}Validation Queue{% else %}My Assigned Jobs{% endif %}</h1>
+        <p class="apple-subheadline text-gray-500 mt-2">{% if user.is_admin %}Jobs waiting for review, grouped by task{% else %}Jobs assigned to you for review{% endif %}</p>
     </div>
     {% if user.is_admin %}
-    <a href="/admin/queue" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm">
+    <a href="/admin/queue" class="apple-btn apple-btn-primary">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+        </svg>
         Bulk Assign
     </a>
     {% endif %}
@@ -16,23 +19,23 @@
 
 {% if jobs_by_task %}
     {% for task_name, task_jobs in jobs_by_task.items() %}
-    <div class="bg-white rounded-lg shadow mb-6">
+    <div class="apple-card mb-8">
         <!-- Task Header -->
-        <div class="px-4 py-3 bg-gray-50 border-b rounded-t-lg flex justify-between items-center">
+        <div class="apple-card-header flex justify-between items-center">
             <div>
-                <h2 class="font-semibold text-gray-800">{{ task_name }}</h2>
-                <span class="text-sm text-gray-500">{{ task_jobs | length }} job(s) pending</span>
+                <h2>{{ task_name }}</h2>
+                <p class="apple-footnote text-gray-500 mt-1">{{ task_jobs | length }} job(s) pending</p>
             </div>
             {% if user.is_admin %}
-            <form method="POST" action="/queue/assign-task" class="flex items-center gap-2">
+            <form method="POST" action="/queue/assign-task" class="flex items-center gap-3">
                 <input type="hidden" name="task_name" value="{{ task_name }}">
-                <select name="reviewer_id" required class="text-sm px-2 py-1 border rounded focus:ring-1 focus:ring-indigo-500">
+                <select name="reviewer_id" required class="apple-select" style="min-width: 160px;">
                     <option value="">Assign all to...</option>
                     {% for u in all_users %}
                     <option value="{{ u.id }}">{{ u.username }}</option>
                     {% endfor %}
                 </select>
-                <button type="submit" class="px-3 py-1 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                <button type="submit" class="apple-btn apple-btn-primary apple-btn-sm">
                     Assign Task
                 </button>
             </form>
@@ -40,61 +43,61 @@
         </div>
 
         <!-- Jobs Table -->
-        <table class="w-full">
-            <thead class="bg-gray-50">
+        <table class="apple-table">
+            <thead>
                 <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job ID</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Completed By</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Completed At</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rejections</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th>Job ID</th>
+                    <th>Completed By</th>
+                    <th>Completed At</th>
+                    <th>Status</th>
+                    <th>Rejections</th>
+                    <th>Assigned To</th>
+                    <th class="text-right">Actions</th>
                 </tr>
             </thead>
-            <tbody class="divide-y">
+            <tbody>
                 {% for job in task_jobs %}
-                <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-sm font-medium text-gray-800 font-mono">{{ job.cvat_job_id }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600">{{ job.completed_by_username or '-' }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-500">
+                <tr>
+                    <td class="font-mono font-medium">{{ job.cvat_job_id }}</td>
+                    <td class="text-gray-500">{{ job.completed_by_username or '-' }}</td>
+                    <td class="text-gray-500">
                         {{ job.completed_at.strftime('%Y-%m-%d %H:%M') if job.completed_at else '-' }}
                     </td>
-                    <td class="px-4 py-3">
-                        <span class="px-2 py-1 text-xs rounded status-{{ job.status.value }}">
+                    <td>
+                        <span class="apple-badge apple-status-{{ job.status.value }}">
                             {{ job.status.value.replace('_', ' ').title() }}
                         </span>
                     </td>
-                    <td class="px-4 py-3 text-sm">
+                    <td>
                         {% if job.rejection_count and job.rejection_count > 0 %}
-                        <span class="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-medium" title="{{ job.last_rejection_notes or 'No notes' }}">
+                        <span class="apple-badge apple-status-rejected" title="{{ job.last_rejection_notes or 'No notes' }}">
                             {{ job.rejection_count }}x rejected
                         </span>
                         {% else %}
                         <span class="text-gray-400">-</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3 text-sm">
+                    <td>
                         {% if job.assigned_to_user %}
-                        <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                        <span class="apple-badge apple-status-in_review">
                             {{ job.assigned_to_user.username }}
                         </span>
                         {% else %}
                         <span class="text-gray-400">Unassigned</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3 text-right">
+                    <td class="text-right">
                         {% if user.is_admin %}
                             <div class="flex items-center justify-end gap-2">
                                 <!-- Assignment dropdown -->
-                                <form method="POST" action="/queue/{{ job.id }}/assign" class="inline-flex items-center gap-1">
-                                    <select name="reviewer_id" required class="text-sm px-2 py-1 border rounded focus:ring-1 focus:ring-indigo-500">
+                                <form method="POST" action="/queue/{{ job.id }}/assign" class="inline-flex items-center gap-2">
+                                    <select name="reviewer_id" required class="apple-select text-sm" style="min-width: 120px;">
                                         <option value="">Assign...</option>
                                         {% for u in all_users %}
                                         <option value="{{ u.id }}" {% if job.assigned_to == u.id %}selected{% endif %}>{{ u.username }}</option>
                                         {% endfor %}
                                     </select>
-                                    <button type="submit" class="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                                    <button type="submit" class="apple-btn apple-btn-primary apple-btn-sm">
                                         Assign
                                     </button>
                                 </form>
@@ -102,21 +105,21 @@
                                 {% if job.status.value == 'pending' %}
                                 <button type="button"
                                         onclick="startReview({{ job.id }})"
-                                        class="text-indigo-600 hover:text-indigo-800 text-sm">
+                                        class="apple-btn apple-btn-ghost apple-btn-sm">
                                     Take
                                 </button>
                                 {% elif job.status.value == 'in_review' %}
                                 <form method="POST" action="/queue/{{ job.id }}/validate" class="inline">
                                     <input type="hidden" name="action" value="validate">
                                     <input type="hidden" name="notes" value="">
-                                    <button type="submit" class="text-green-600 hover:text-green-800 text-sm">
+                                    <button type="submit" class="apple-btn apple-btn-success apple-btn-sm">
                                         Approve
                                     </button>
                                 </form>
                                 <form method="POST" action="/queue/{{ job.id }}/validate" class="inline">
                                     <input type="hidden" name="action" value="reject">
                                     <input type="hidden" name="notes" value="">
-                                    <button type="submit" class="text-red-600 hover:text-red-800 text-sm">
+                                    <button type="submit" class="apple-btn apple-btn-danger apple-btn-sm">
                                         Reject
                                     </button>
                                 </form>
@@ -127,33 +130,33 @@
                             {% if job.status.value == 'pending' %}
                             <button type="button"
                                     onclick="startReview({{ job.id }})"
-                                    class="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                                    class="apple-btn apple-btn-success apple-btn-sm">
                                 Start Review
                             </button>
                             {% elif job.status.value == 'in_review' %}
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 justify-end">
                                 <a href="{{ job.cvat_host.rstrip('/') }}/tasks/{{ job.cvat_task_id }}/jobs/{{ job.cvat_job_id }}"
                                    target="_blank"
-                                   class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                                   class="apple-btn apple-btn-primary apple-btn-sm">
                                     Open in CVAT
                                 </a>
                                 <form method="POST" action="/queue/{{ job.id }}/validate" class="inline">
                                     <input type="hidden" name="action" value="validate">
                                     <input type="hidden" name="notes" value="">
-                                    <button type="submit" class="text-green-600 hover:text-green-800 text-sm">
+                                    <button type="submit" class="apple-btn apple-btn-success apple-btn-sm">
                                         Approve
                                     </button>
                                 </form>
                                 <form method="POST" action="/queue/{{ job.id }}/validate" class="inline">
                                     <input type="hidden" name="action" value="reject">
                                     <input type="hidden" name="notes" value="">
-                                    <button type="submit" class="text-red-600 hover:text-red-800 text-sm">
+                                    <button type="submit" class="apple-btn apple-btn-danger apple-btn-sm">
                                         Reject
                                     </button>
                                 </form>
                             </div>
                             {% else %}
-                            <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
+                            <span class="apple-badge apple-status-validated">
                                 Assigned to you
                             </span>
                             {% endif %}
@@ -168,38 +171,76 @@
     </div>
     {% endfor %}
 {% else %}
-<div class="bg-white rounded-lg shadow">
-    <div class="px-4 py-8 text-center text-gray-500">
-        {% if user.is_admin %}
-        No jobs pending validation.
-        {% else %}
-        No jobs assigned to you.
-        {% endif %}
+<div class="apple-card">
+    <div class="apple-empty-state">
+        <div class="apple-empty-icon">
+            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+            </svg>
+        </div>
+        <h3 class="apple-empty-heading">
+            {% if user.is_admin %}No Jobs Pending{% else %}No Assigned Jobs{% endif %}
+        </h3>
+        <p class="apple-empty-text">
+            {% if user.is_admin %}
+            No jobs are currently pending validation.
+            {% else %}
+            No jobs have been assigned to you yet.
+            {% endif %}
+        </p>
     </div>
 </div>
 {% endif %}
 
 <!-- Summary Stats -->
 {% if jobs_by_task %}
-<div class="mt-6 grid grid-cols-4 gap-4">
-    <div class="bg-white rounded-lg shadow p-4">
-        <div class="text-2xl font-bold text-gray-800">{{ total_jobs }}</div>
-        <div class="text-sm text-gray-500">Total Jobs</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8">
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Total Jobs</p>
+        <p class="apple-stat-value">{{ total_jobs }}</p>
     </div>
-    <div class="bg-white rounded-lg shadow p-4">
-        <div class="text-2xl font-bold text-amber-600">{{ pending_count }}</div>
-        <div class="text-sm text-gray-500">Pending</div>
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Pending</p>
+        <p class="apple-stat-value warning">{{ pending_count }}</p>
     </div>
-    <div class="bg-white rounded-lg shadow p-4">
-        <div class="text-2xl font-bold text-blue-600">{{ assigned_count }}</div>
-        <div class="text-sm text-gray-500">Assigned</div>
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Assigned</p>
+        <p class="apple-stat-value primary">{{ assigned_count }}</p>
     </div>
-    <div class="bg-white rounded-lg shadow p-4">
-        <div class="text-2xl font-bold text-purple-600">{{ jobs_by_task | length }}</div>
-        <div class="text-sm text-gray-500">Tasks</div>
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Tasks</p>
+        <p class="apple-stat-value purple">{{ jobs_by_task | length }}</p>
     </div>
 </div>
 {% endif %}
+
+<!-- CVAT Modal -->
+<div id="cvat-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal">
+        <div class="apple-modal-header">
+            <h2>Job Ready for Review</h2>
+            <button onclick="closeCvatModal()" class="apple-modal-close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="apple-modal-body">
+            <p class="apple-body text-gray-600 mb-6">The job status has been updated. Click the button below to open it in CVAT:</p>
+            <div class="flex flex-col gap-3">
+                <a id="cvat-link" href="#" target="_blank" class="apple-btn apple-btn-primary w-full justify-center">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                    </svg>
+                    Open Job in CVAT
+                </a>
+                <button onclick="closeCvatModal()" class="apple-btn apple-btn-secondary w-full justify-center">
+                    Close & Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 async function startReview(jobId) {
@@ -226,33 +267,32 @@ async function startReview(jobId) {
 }
 
 function showCvatModal(cvatUrl) {
-    // Create modal overlay
-    const overlay = document.createElement('div');
-    overlay.id = 'cvat-modal';
-    overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-    overlay.innerHTML = `
-        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md mx-4">
-            <h3 class="text-lg font-semibold text-gray-800 mb-4">Job Ready for Review</h3>
-            <p class="text-gray-600 mb-4">The job status has been updated. Click the button below to open it in CVAT:</p>
-            <div class="flex flex-col gap-3">
-                <a href="${cvatUrl}" target="_blank"
-                   class="w-full px-4 py-2 bg-blue-600 text-white text-center rounded-lg hover:bg-blue-700 transition">
-                    Open Job in CVAT
-                </a>
-                <button onclick="closeCvatModal()"
-                        class="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">
-                    Close & Refresh
-                </button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
+    const modal = document.getElementById('cvat-modal');
+    const link = document.getElementById('cvat-link');
+    link.href = cvatUrl;
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
 }
 
 function closeCvatModal() {
     const modal = document.getElementById('cvat-modal');
-    if (modal) modal.remove();
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
     window.location.reload();
 }
+
+// Close modal on escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeCvatModal();
+    }
+});
+
+// Close modal on overlay click
+document.getElementById('cvat-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'cvat-modal') {
+        closeCvatModal();
+    }
+});
 </script>
 {% endblock %}

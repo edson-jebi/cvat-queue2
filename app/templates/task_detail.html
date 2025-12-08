@@ -2,87 +2,120 @@
 {% block title %}Task {{ task.id if task else '' }} - CVAT Queue{% endblock %}
 
 {% block content %}
-<div class="mb-6 flex justify-between items-start">
-    <div>
-        <a href="/dashboard" class="text-indigo-600 hover:text-indigo-800 text-sm">&larr; Back to Tasks</a>
-        <h1 class="text-2xl font-bold text-gray-800 mt-2">
-            {% if task %}{{ task.name }}{% else %}Task{% endif %}
-        </h1>
-        <p class="text-gray-500">Task ID: {{ task.id if task else 'Unknown' }}</p>
-    </div>
+<div class="mb-10">
+    <a href="/dashboard" class="apple-breadcrumb mb-4 inline-flex">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+        </svg>
+        <span>Tasks</span>
+    </a>
 
-    <div class="flex gap-2">
-        <a href="/task/{{ task.id if task else '' }}/analytics" class="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 text-sm">
-            Analytics
-        </a>
-        <form method="POST" action="/sync-completed">
-            <input type="hidden" name="task_id" value="{{ task.id if task else '' }}">
-            <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">
-                Sync All Completed
-            </button>
-        </form>
+    <div class="flex justify-between items-start mt-4">
+        <div>
+            <h1 class="apple-title-2 text-gray-900">
+                {% if task %}{{ task.name }}{% else %}Task{% endif %}
+            </h1>
+            <p class="apple-subheadline text-gray-500 mt-2">Task ID: {{ task.id if task else 'Unknown' }}</p>
+        </div>
+
+        <div class="flex gap-3">
+            <a href="/task/{{ task.id if task else '' }}/analytics" class="apple-btn apple-btn-secondary">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                Analytics
+            </a>
+            <form method="POST" action="/sync-completed">
+                <input type="hidden" name="task_id" value="{{ task.id if task else '' }}">
+                <button type="submit" class="apple-btn apple-btn-primary">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Sync All Completed
+                </button>
+            </form>
+        </div>
     </div>
 </div>
 
-<div class="bg-white rounded-lg shadow">
-    <div class="px-4 py-3 border-b">
-        <h2 class="font-semibold text-gray-700">Jobs</h2>
+<div class="apple-card">
+    <div class="apple-card-header">
+        <h2>Jobs</h2>
     </div>
 
     {% if jobs %}
-    <table class="w-full">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job ID</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assignee</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frames</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Queue Status</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y">
-            {% for job in jobs %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 text-sm font-medium text-gray-800">{{ job.id }}</td>
-                <td class="px-4 py-3 text-sm text-gray-600">{{ job.stage }}</td>
-                <td class="px-4 py-3">
-                    <span class="px-2 py-1 text-xs rounded state-{{ job.state.lower().replace(' ', '_') }}">
-                        {{ job.state }}
-                    </span>
-                </td>
-                <td class="px-4 py-3 text-sm text-gray-600">{{ job.assignee or '-' }}</td>
-                <td class="px-4 py-3 text-sm text-gray-600">{{ job.frame_count }}</td>
-                <td class="px-4 py-3">
-                    {% if job.id in queued_ids %}
-                    <span class="px-2 py-1 text-xs rounded bg-green-100 text-green-700">In Queue</span>
-                    {% else %}
-                    <span class="text-sm text-gray-400">-</span>
-                    {% endif %}
-                </td>
-                <td class="px-4 py-3 text-right">
-                    {% if job.state == 'completed' and job.id not in queued_ids %}
-                    <form method="POST" action="/enqueue/{{ job.id }}" class="inline">
-                        <input type="hidden" name="task_id" value="{{ task.id if task else job.task_id }}">
-                        <input type="hidden" name="task_name" value="{{ task.name if task else '' }}">
-                        <button type="submit" class="text-indigo-600 hover:text-indigo-800 text-sm">
-                            Add to Queue
-                        </button>
-                    </form>
-                    {% elif job.id in queued_ids %}
-                    <span class="text-gray-400 text-sm">Queued</span>
-                    {% else %}
-                    <span class="text-gray-400 text-sm">Not completed</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="apple-table-container">
+        <table class="apple-table">
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Stage</th>
+                    <th>State</th>
+                    <th>Assignee</th>
+                    <th>Frames</th>
+                    <th>Queue Status</th>
+                    <th class="text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td class="font-mono font-medium">{{ job.id }}</td>
+                    <td>
+                        <span class="apple-badge apple-stage-{{ job.stage.lower() }}">
+                            {{ job.stage }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="apple-badge apple-state-{{ job.state.lower().replace(' ', '_') }}">
+                            {{ job.state }}
+                        </span>
+                    </td>
+                    <td class="text-gray-500">{{ job.assignee or '-' }}</td>
+                    <td class="text-gray-500">{{ job.frame_count }}</td>
+                    <td>
+                        {% if job.id in queued_ids %}
+                        <span class="apple-badge apple-status-validated">
+                            In Queue
+                        </span>
+                        {% else %}
+                        <span class="text-gray-400">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-right">
+                        {% if job.state == 'completed' and job.id not in queued_ids %}
+                        <form method="POST" action="/enqueue/{{ job.id }}" class="inline">
+                            <input type="hidden" name="task_id" value="{{ task.id if task else job.task_id }}">
+                            <input type="hidden" name="task_name" value="{{ task.name if task else '' }}">
+                            <button type="submit" class="apple-btn apple-btn-ghost apple-btn-sm">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Add to Queue
+                            </button>
+                        </form>
+                        {% elif job.id in queued_ids %}
+                        <span class="text-gray-400 text-sm">Queued</span>
+                        {% else %}
+                        <span class="text-gray-400 text-sm">Not completed</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% else %}
-    <div class="px-4 py-8 text-center text-gray-500">
-        No jobs found for this task.
+    <div class="apple-empty-state">
+        <div class="apple-empty-icon">
+            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+            </svg>
+        </div>
+        <h3 class="apple-empty-heading">No Jobs Found</h3>
+        <p class="apple-empty-text">
+            No jobs found for this task.
+        </p>
     </div>
     {% endif %}
 </div>

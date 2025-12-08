@@ -4,61 +4,70 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}CVAT Queue{% endblock %}</title>
+    <meta name="theme-color" content="#007AFF">
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .status-pending { background-color: #fef3c7; color: #92400e; }
-        .status-in_review { background-color: #dbeafe; color: #1e40af; }
-        .status-validated { background-color: #d1fae5; color: #065f46; }
-        .status-rejected { background-color: #fee2e2; color: #991b1b; }
-        .state-new { background-color: #e5e7eb; color: #374151; }
-        .state-in_progress { background-color: #dbeafe; color: #1e40af; }
-        .state-completed { background-color: #d1fae5; color: #065f46; }
-        .state-rejected { background-color: #fee2e2; color: #991b1b; }
-    </style>
+    <link rel="stylesheet" href="/static/css/apple-design.css">
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="min-h-screen">
     {% if user %}
-    <nav class="bg-white shadow-sm border-b">
-        <div class="max-w-6xl mx-auto px-4">
-            <div class="flex justify-between h-14">
-                <div class="flex items-center space-x-6">
-                    <a href="/dashboard" class="font-semibold text-gray-800">CVAT Queue</a>
-                    <a href="/dashboard" class="text-gray-600 hover:text-gray-800">Tasks</a>
-                    <a href="/queue" class="text-gray-600 hover:text-gray-800">Queue</a>
-                    <a href="/history" class="text-gray-600 hover:text-gray-800">History</a>
+    <nav class="apple-nav" id="main-nav">
+        <div class="apple-nav-container">
+            <div class="flex items-center gap-8">
+                <a href="/dashboard" class="apple-nav-brand">CVAT Queue</a>
+                <div class="apple-nav-links hidden md:flex">
+                    <a href="/dashboard" class="apple-nav-link {% if request.path == '/dashboard' %}active{% endif %}">Tasks</a>
+                    <a href="/queue" class="apple-nav-link {% if request.path == '/queue' %}active{% endif %}">Queue</a>
+                    <a href="/history" class="apple-nav-link {% if request.path == '/history' %}active{% endif %}">History</a>
                     {% if user.is_admin %}
-                    <a href="/admin/queue" class="text-gray-600 hover:text-gray-800">Assign</a>
-                    <a href="/admin/users" class="text-gray-600 hover:text-gray-800">Users</a>
-                    <a href="/admin/backup" class="text-gray-600 hover:text-gray-800">Backup</a>
+                    <a href="/admin/queue" class="apple-nav-link {% if request.path == '/admin/queue' %}active{% endif %}">Assign</a>
+                    <a href="/admin/users" class="apple-nav-link {% if request.path == '/admin/users' %}active{% endif %}">Users</a>
+                    <a href="/admin/backup" class="apple-nav-link {% if request.path == '/admin/backup' %}active{% endif %}">Backup</a>
                     {% endif %}
                 </div>
-                <div class="flex items-center space-x-4">
-                    <!-- Notifications -->
-                    <a href="/notifications" class="relative text-gray-600 hover:text-gray-800">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-                        </svg>
-                        {% if unread_notifications %}
-                        <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                            {{ unread_notifications if unread_notifications < 10 else '9+' }}
-                        </span>
-                        {% endif %}
-                    </a>
-                    <span class="text-sm text-gray-500">
-                        {{ user.username }}
-                        {% if user.is_admin %}
-                        <span class="ml-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded">Admin</span>
-                        {% endif %}
+            </div>
+            <div class="apple-nav-actions">
+                <!-- Notifications -->
+                <a href="/notifications" class="apple-nav-icon">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                    </svg>
+                    {% if unread_notifications %}
+                    <span class="apple-notification-badge">
+                        {{ unread_notifications if unread_notifications < 10 else '9+' }}
                     </span>
-                    <a href="/auth/logout" class="text-sm text-gray-500 hover:text-gray-700">Logout</a>
+                    {% endif %}
+                </a>
+                <div class="apple-user-info">
+                    <span>{{ user.username }}</span>
+                    {% if user.is_admin %}
+                    <span class="apple-admin-badge">Admin</span>
+                    {% endif %}
                 </div>
+                <a href="/auth/logout" class="apple-nav-logout">Logout</a>
             </div>
         </div>
     </nav>
     {% endif %}
 
-    <main class="max-w-6xl mx-auto px-4 py-6">
+    <main class="max-w-6xl mx-auto px-6 py-8 apple-page-content">
         {% block content %}{% endblock %}
     </main>
+
+    <script>
+        // Navigation scroll effect
+        const nav = document.getElementById('main-nav');
+        if (nav) {
+            let lastScroll = 0;
+            window.addEventListener('scroll', () => {
+                const currentScroll = window.pageYOffset;
+                if (currentScroll > 10) {
+                    nav.classList.add('scrolled');
+                } else {
+                    nav.classList.remove('scrolled');
+                }
+                lastScroll = currentScroll;
+            });
+        }
+    </script>
 </body>
 </html>

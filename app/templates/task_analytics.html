@@ -4,30 +4,42 @@
 {% block content %}
 
 <!-- Loading Overlay -->
-<div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
-    <div class="text-center">
-        <div class="inline-block animate-spin rounded-full h-24 w-24 border-t-4 border-b-4 border-indigo-500"></div>
-        <p class="mt-4 text-white text-xl font-semibold">Refreshing Data...</p>
-        <p class="mt-2 text-gray-300 text-sm">Capturing new snapshot with updated label statistics</p>
+<div id="loading-overlay" class="apple-loading-overlay hidden">
+    <div class="apple-loading-content">
+        <div class="apple-spinner"></div>
+        <p class="apple-loading-text">Refreshing Data...</p>
+        <p class="apple-loading-subtext">Capturing new snapshot with updated label statistics</p>
     </div>
 </div>
 
-<div class="mb-6">
-    <a href="/task/{{ task_id }}" class="text-indigo-600 hover:text-indigo-800 text-sm">&larr; Back to Task</a>
-    <div class="flex justify-between items-start mt-2">
+<div class="mb-10">
+    <a href="/task/{{ task_id }}" class="apple-breadcrumb mb-4 inline-flex">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+        </svg>
+        <span>Task</span>
+    </a>
+
+    <div class="flex justify-between items-start mt-4">
         <div>
-            <h1 class="text-2xl font-bold text-gray-800">
+            <h1 class="apple-title-2 text-gray-900">
                 {% if task %}{{ task.name }}{% else %}Task{% endif %} - Analytics
             </h1>
-            <p class="text-gray-500">Task ID: {{ task_id }}</p>
+            <p class="apple-subheadline text-gray-500 mt-2">Task ID: {{ task_id }}</p>
         </div>
 
-        <div class="flex gap-2">
-            <button onclick="generateReport()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm">
+        <div class="flex gap-3">
+            <button onclick="generateReport()" class="apple-btn apple-btn-success">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
                 Export Report
             </button>
             <form method="POST" action="/task/{{ task_id }}/analytics/refresh" onsubmit="showLoadingOverlay()">
-                <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">
+                <button type="submit" class="apple-btn apple-btn-primary">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
                     Refresh Data
                 </button>
             </form>
@@ -36,15 +48,15 @@
 </div>
 
 <!-- Timeline Stats -->
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="bg-white rounded-lg shadow p-4">
-        <h3 class="text-sm font-medium text-gray-500">Snapshots</h3>
-        <p class="text-2xl font-bold text-gray-800 mt-2">{{ history|length }}</p>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Snapshots</p>
+        <p class="apple-stat-value">{{ history|length }}</p>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4">
-        <h3 class="text-sm font-medium text-gray-500">Latest Count</h3>
-        <p class="text-2xl font-bold text-indigo-600 mt-2">
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Latest Count</p>
+        <p class="apple-stat-value primary">
             {% if history|length > 0 %}
                 {{ history[-1].annotation_count }}
             {% else %}
@@ -53,9 +65,9 @@
         </p>
     </div>
 
-    <div class="bg-white rounded-lg shadow p-4">
-        <h3 class="text-sm font-medium text-gray-500">Change Since First</h3>
-        <p class="text-2xl font-bold text-green-600 mt-2">
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Change Since First</p>
+        <p class="apple-stat-value success">
             {% if history|length > 1 %}
                 +{{ history[-1].annotation_count - history[0].annotation_count }}
             {% else %}
@@ -66,82 +78,90 @@
 </div>
 
 <!-- Annotation Timeline Chart -->
-<div class="bg-white rounded-lg shadow p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-700 mb-4">Annotation Timeline</h2>
-
-    {% if history %}
-    <div style="height: 350px;">
-        <canvas id="annotationChart"></canvas>
+<div class="apple-card mb-8">
+    <div class="apple-card-header">
+        <h2>Annotation Timeline</h2>
     </div>
-    {% else %}
-    <div class="text-center py-12 text-gray-500">
-        <p>No data available yet.</p>
-        <p class="text-sm mt-2">Click "Refresh Data" to capture the first snapshot.</p>
+    <div class="apple-card-body">
+        {% if history %}
+        <div style="height: 350px;">
+            <canvas id="annotationChart"></canvas>
+        </div>
+        {% else %}
+        <div class="apple-empty-state py-16">
+            <div class="apple-empty-icon">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+            </div>
+            <h3 class="apple-empty-heading">No Data Available</h3>
+            <p class="apple-empty-text">Click "Refresh Data" to capture the first snapshot.</p>
+        </div>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 
 <!-- Annotations by Job Toggle Section -->
-<div class="bg-white rounded-lg shadow mb-6">
-    <div class="px-4 py-3 border-b flex justify-between items-center">
-        <h2 class="font-semibold text-gray-700">Annotations by Job</h2>
-        <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="jobs-toggle" class="sr-only peer" onchange="toggleJobsData()">
-            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-            <span class="ml-3 text-sm font-medium text-gray-700" id="toggle-label">Off</span>
+<div class="apple-card mb-8">
+    <div class="apple-card-header flex justify-between items-center">
+        <h2>Annotations by Job</h2>
+        <label class="apple-toggle">
+            <input type="checkbox" id="jobs-toggle" onchange="toggleJobsData()">
+            <span class="apple-toggle-slider"></span>
         </label>
     </div>
 
     <!-- Loading indicator -->
-    <div id="jobs-loading" class="hidden p-8 text-center">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        <p class="mt-2 text-gray-500">Loading job data from CVAT...</p>
+    <div id="jobs-loading" class="hidden p-12 text-center">
+        <div class="apple-spinner mx-auto"></div>
+        <p class="mt-4 text-gray-500">Loading job data from CVAT...</p>
     </div>
 
     <!-- Jobs Stats (dynamic) -->
-    <div id="jobs-stats" class="hidden p-4 border-b">
+    <div id="jobs-stats" class="hidden p-6 border-b border-gray-100">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Total Jobs</h3>
-                <p class="text-xl font-bold text-gray-800" id="stat-total-jobs">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Total Jobs</p>
+                <p class="apple-stat-value text-2xl" id="stat-total-jobs">-</p>
             </div>
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Total Annotations</h3>
-                <p class="text-xl font-bold text-indigo-600" id="stat-total-annotations">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Total Annotations</p>
+                <p class="apple-stat-value text-2xl primary" id="stat-total-annotations">-</p>
             </div>
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Total Frames</h3>
-                <p class="text-xl font-bold text-gray-800" id="stat-total-frames">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Total Frames</p>
+                <p class="apple-stat-value text-2xl" id="stat-total-frames">-</p>
             </div>
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Avg Ann/Job</h3>
-                <p class="text-xl font-bold text-purple-600" id="stat-avg-annotations">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Avg Ann/Job</p>
+                <p class="apple-stat-value text-2xl purple" id="stat-avg-annotations">-</p>
             </div>
         </div>
     </div>
 
     <!-- Jobs Table -->
     <div id="jobs-table" class="hidden">
-        <table class="w-full">
-            <thead class="bg-gray-50">
+        <table class="apple-table">
+            <thead>
                 <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job ID</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assignee</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frames</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Annotations</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Labels</th>
-                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th>Job ID</th>
+                    <th>Assignee</th>
+                    <th>Stage</th>
+                    <th>State</th>
+                    <th>Frames</th>
+                    <th class="text-right">Annotations</th>
+                    <th class="text-right">Labels</th>
+                    <th class="text-center">Actions</th>
                 </tr>
             </thead>
-            <tbody id="jobs-tbody" class="divide-y">
+            <tbody id="jobs-tbody">
                 <!-- Jobs will be loaded here dynamically -->
             </tbody>
             <tfoot class="bg-gray-50">
                 <tr>
-                    <td colspan="7" class="px-4 py-3 text-sm font-medium text-gray-700 text-right">Total:</td>
-                    <td class="px-4 py-3 text-sm text-right font-bold text-indigo-600" id="jobs-total-annotations">-</td>
+                    <td colspan="5" class="px-6 py-4 text-sm font-medium text-gray-700 text-right">Total:</td>
+                    <td class="px-6 py-4 text-sm text-right font-bold text-indigo-600" id="jobs-total-annotations">-</td>
+                    <td colspan="2"></td>
                 </tr>
             </tfoot>
         </table>
@@ -149,131 +169,148 @@
 </div>
 
 <!-- Labels Statistics Toggle Section -->
-<div class="bg-white rounded-lg shadow mb-6">
-    <div class="px-4 py-3 border-b flex justify-between items-center">
-        <h2 class="font-semibold text-gray-700">Labels Statistics</h2>
-        <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="labels-toggle" class="sr-only peer" onchange="toggleLabelsData()">
-            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-            <span class="ml-3 text-sm font-medium text-gray-700" id="labels-toggle-label">Off</span>
+<div class="apple-card mb-8">
+    <div class="apple-card-header flex justify-between items-center">
+        <h2>Labels Statistics</h2>
+        <label class="apple-toggle">
+            <input type="checkbox" id="labels-toggle" onchange="toggleLabelsData()">
+            <span class="apple-toggle-slider"></span>
         </label>
     </div>
 
     <!-- Loading indicator -->
-    <div id="labels-loading" class="hidden p-8 text-center">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        <p class="mt-2 text-gray-500">Loading label statistics...</p>
+    <div id="labels-loading" class="hidden p-12 text-center">
+        <div class="apple-spinner mx-auto"></div>
+        <p class="mt-4 text-gray-500">Loading label statistics...</p>
     </div>
 
     <!-- Labels Stats (dynamic) -->
-    <div id="labels-stats" class="hidden p-4 border-b">
+    <div id="labels-stats" class="hidden p-6 border-b border-gray-100">
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Total Labels</h3>
-                <p class="text-xl font-bold text-gray-800" id="stat-total-labels">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Total Labels</p>
+                <p class="apple-stat-value text-2xl" id="stat-total-labels">-</p>
             </div>
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Total Annotations</h3>
-                <p class="text-xl font-bold text-indigo-600" id="stat-labels-annotations">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Total Annotations</p>
+                <p class="apple-stat-value text-2xl primary" id="stat-labels-annotations">-</p>
             </div>
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Snapshots</h3>
-                <p class="text-xl font-bold text-gray-800" id="stat-labels-snapshots">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Snapshots</p>
+                <p class="apple-stat-value text-2xl" id="stat-labels-snapshots">-</p>
             </div>
-            <div class="bg-gray-50 rounded p-3">
-                <h3 class="text-sm font-medium text-gray-500">Avg Ann/Label</h3>
-                <p class="text-xl font-bold text-purple-600" id="stat-avg-label-annotations">-</p>
+            <div class="apple-stat-card">
+                <p class="apple-stat-label">Avg Ann/Label</p>
+                <p class="apple-stat-value text-2xl purple" id="stat-avg-label-annotations">-</p>
             </div>
         </div>
     </div>
 
     <!-- Labels Charts -->
-    <div id="labels-charts" class="hidden p-4 space-y-6">
+    <div id="labels-charts" class="hidden p-6 space-y-6">
         <!-- Chart Type Buttons -->
         <div class="flex gap-2 justify-center">
-            <button onclick="showLabelChart('bar')" id="chart-btn-bar" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm">
+            <button onclick="showLabelChart('bar')" id="chart-btn-bar" class="apple-btn apple-btn-primary apple-btn-sm">
                 Bar Chart
             </button>
-            <button onclick="showLabelChart('pie')" id="chart-btn-pie" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+            <button onclick="showLabelChart('pie')" id="chart-btn-pie" class="apple-btn apple-btn-secondary apple-btn-sm">
                 Pie Chart
             </button>
-            <button onclick="showLabelChart('timeline')" id="chart-btn-timeline" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+            <button onclick="showLabelChart('timeline')" id="chart-btn-timeline" class="apple-btn apple-btn-secondary apple-btn-sm">
                 Timeline
             </button>
         </div>
 
         <!-- Chart Container -->
-        <div id="labels-chart-container" style="min-height: 400px;"></div>
+        <div id="labels-chart-container" class="bg-gray-50 rounded-xl p-4" style="min-height: 400px;"></div>
 
         <!-- Labels Table -->
         <div id="labels-table-container">
-            <h3 class="text-lg font-semibold text-gray-700 mb-3">Label Details</h3>
-            <table class="w-full border">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border">Label Name</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase border">Count</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase border">Percentage</th>
-                    </tr>
-                </thead>
-                <tbody id="labels-tbody" class="divide-y">
-                    <!-- Labels will be loaded here dynamically -->
-                </tbody>
-            </table>
+            <h3 class="apple-headline text-gray-900 mb-4">Label Details</h3>
+            <div class="apple-card">
+                <table class="apple-table">
+                    <thead>
+                        <tr>
+                            <th>Label Name</th>
+                            <th class="text-right">Count</th>
+                            <th class="text-right">Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody id="labels-tbody">
+                        <!-- Labels will be loaded here dynamically -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Note about asterisk -->
-        <div id="unmapped-note" class="hidden mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-            <strong>Note:</strong> Labels marked with (*) have unmapped or invalid label IDs. This may indicate deleted labels or data synchronization issues.
+        <div id="unmapped-note" class="hidden apple-alert apple-alert-info">
+            <div class="apple-alert-icon">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="apple-alert-content">
+                <p><strong>Note:</strong> Labels marked with (*) have unmapped or invalid label IDs. This may indicate deleted labels or data synchronization issues.</p>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- Job Labels Modal -->
-<div id="job-labels-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
-        <div class="px-6 py-4 border-b flex justify-between items-center sticky top-0 bg-white">
-            <h2 class="text-xl font-bold text-gray-800">Job <span id="modal-job-id"></span> - Label Statistics</h2>
-            <button onclick="closeJobLabelsModal()" class="text-gray-500 hover:text-gray-700">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<div id="job-labels-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal apple-modal-lg">
+        <div class="apple-modal-header">
+            <h2>Job <span id="modal-job-id"></span> - Label Statistics</h2>
+            <button onclick="closeJobLabelsModal()" class="apple-modal-close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
             </button>
         </div>
-        <div class="p-6">
+        <div class="apple-modal-body">
             <!-- Stats Cards -->
             <div class="grid grid-cols-2 gap-4 mb-6">
-                <div class="bg-gray-50 rounded p-3">
-                    <h3 class="text-sm font-medium text-gray-500">Unique Labels</h3>
-                    <p class="text-xl font-bold text-gray-800" id="modal-total-labels">-</p>
+                <div class="apple-stat-card">
+                    <p class="apple-stat-label">Unique Labels</p>
+                    <p class="apple-stat-value text-2xl" id="modal-total-labels">-</p>
                 </div>
-                <div class="bg-gray-50 rounded p-3">
-                    <h3 class="text-sm font-medium text-gray-500">Total Annotations</h3>
-                    <p class="text-xl font-bold text-indigo-600" id="modal-total-annotations">-</p>
+                <div class="apple-stat-card">
+                    <p class="apple-stat-label">Total Annotations</p>
+                    <p class="apple-stat-value text-2xl primary" id="modal-total-annotations">-</p>
                 </div>
             </div>
 
             <!-- Chart -->
-            <div id="modal-chart-container" class="mb-6" style="min-height: 300px;"></div>
+            <div id="modal-chart-container" class="mb-6 bg-gray-50 rounded-xl p-4" style="min-height: 300px;"></div>
 
             <!-- Table -->
-            <h3 class="text-lg font-semibold text-gray-700 mb-3">Label Details</h3>
-            <table class="w-full border">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase border">Label</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase border">Count</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase border">Percentage</th>
-                    </tr>
-                </thead>
-                <tbody id="modal-labels-tbody">
-                    <!-- Labels will be loaded here -->
-                </tbody>
-            </table>
+            <h3 class="apple-headline text-gray-900 mb-4">Label Details</h3>
+            <div class="apple-card">
+                <table class="apple-table">
+                    <thead>
+                        <tr>
+                            <th>Label</th>
+                            <th class="text-right">Count</th>
+                            <th class="text-right">Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-labels-tbody">
+                        <!-- Labels will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
 
             <!-- Unmapped note -->
-            <div id="modal-unmapped-note" class="hidden mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
-                <strong>Note:</strong> Labels marked with (*) have unmapped or invalid label IDs.
+            <div id="modal-unmapped-note" class="hidden mt-4 apple-alert apple-alert-info">
+                <div class="apple-alert-icon">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <div class="apple-alert-content">
+                    <p><strong>Note:</strong> Labels marked with (*) have unmapped or invalid label IDs.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -281,10 +318,10 @@
 
 <!-- Collapsible Snapshot History -->
 {% if history %}
-<div class="bg-white rounded-lg shadow mb-6">
-    <div class="px-4 py-3 border-b flex justify-between items-center cursor-pointer" onclick="toggleHistoryTable()">
-        <h2 class="font-semibold text-gray-700">Snapshot History</h2>
-        <span id="history-toggle-icon" class="text-gray-500 transform transition-transform">
+<div class="apple-card mb-8">
+    <div class="apple-card-header flex justify-between items-center cursor-pointer" onclick="toggleHistoryTable()">
+        <h2>Snapshot History</h2>
+        <span id="history-toggle-icon" class="text-gray-400 transform transition-transform duration-200">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
             </svg>
@@ -292,30 +329,30 @@
     </div>
 
     <div id="history-table" class="hidden">
-        <table class="w-full">
-            <thead class="bg-gray-50">
+        <table class="apple-table">
+            <thead>
                 <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date & Time</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Annotation Count</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Change</th>
+                    <th>Date & Time</th>
+                    <th>Annotation Count</th>
+                    <th>Change</th>
                 </tr>
             </thead>
-            <tbody class="divide-y">
+            <tbody>
                 {% for snapshot in history %}
-                <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-sm text-gray-800">
+                <tr>
+                    <td class="text-gray-600">
                         {{ snapshot.snapshot_time.strftime('%Y-%m-%d %H:%M:%S') }}
                     </td>
-                    <td class="px-4 py-3 text-sm font-medium text-gray-800">
+                    <td class="font-medium">
                         {{ snapshot.annotation_count }}
                     </td>
-                    <td class="px-4 py-3 text-sm">
+                    <td>
                         {% if loop.index0 > 0 %}
                             {% set change = snapshot.annotation_count - history[loop.index0 - 1].annotation_count %}
                             {% if change > 0 %}
-                                <span class="text-green-600">+{{ change }}</span>
+                                <span class="text-green-600 font-medium">+{{ change }}</span>
                             {% elif change < 0 %}
-                                <span class="text-red-600">{{ change }}</span>
+                                <span class="text-red-600 font-medium">{{ change }}</span>
                             {% else %}
                                 <span class="text-gray-400">0</span>
                             {% endif %}
@@ -332,23 +369,25 @@
 {% endif %}
 
 <!-- Report Modal -->
-<div id="report-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-auto">
-        <div class="px-6 py-4 border-b flex justify-between items-center sticky top-0 bg-white">
-            <h2 class="text-xl font-bold text-gray-800">Analytics Report</h2>
+<div id="report-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal apple-modal-xl">
+        <div class="apple-modal-header">
+            <h2>Analytics Report</h2>
             <div class="flex gap-2">
-                <button onclick="exportCSV()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                <button onclick="exportCSV()" class="apple-btn apple-btn-success apple-btn-sm">
                     Export CSV
                 </button>
-                <button onclick="printReport()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                <button onclick="printReport()" class="apple-btn apple-btn-primary apple-btn-sm">
                     Print
                 </button>
-                <button onclick="closeReportModal()" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
-                    Close
+                <button onclick="closeReportModal()" class="apple-modal-close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
                 </button>
             </div>
         </div>
-        <div id="report-content" class="p-6">
+        <div id="report-content" class="apple-modal-body">
             <!-- Report content will be generated here -->
         </div>
     </div>
@@ -389,14 +428,11 @@
     // Toggle jobs data with fetch
     async function toggleJobsData() {
         const toggle = document.getElementById('jobs-toggle');
-        const label = document.getElementById('toggle-label');
         const loading = document.getElementById('jobs-loading');
         const stats = document.getElementById('jobs-stats');
         const table = document.getElementById('jobs-table');
 
         if (toggle.checked) {
-            label.textContent = 'On';
-
             // If data not loaded, fetch it
             if (!loadedJobsData) {
                 loading.classList.remove('hidden');
@@ -423,7 +459,6 @@
             stats.classList.remove('hidden');
             table.classList.remove('hidden');
         } else {
-            label.textContent = 'Off';
             stats.classList.add('hidden');
             table.classList.add('hidden');
         }
@@ -441,25 +476,25 @@
         // Build table rows
         const tbody = document.getElementById('jobs-tbody');
         tbody.innerHTML = data.jobs.map(job => `
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 text-sm font-medium text-gray-800 font-mono">${job.id}</td>
-                <td class="px-4 py-3 text-sm text-gray-600">${job.assignee}</td>
-                <td class="px-4 py-3 text-sm">
-                    <span class="px-2 py-1 text-xs rounded ${getStageClass(job.stage)}">
+            <tr>
+                <td class="font-mono font-medium">${job.id}</td>
+                <td class="text-gray-500">${job.assignee}</td>
+                <td>
+                    <span class="apple-badge apple-stage-${job.stage}">
                         ${job.stage}
                     </span>
                 </td>
-                <td class="px-4 py-3 text-sm">
-                    <span class="px-2 py-1 text-xs rounded ${getStateClass(job.state)}">
+                <td>
+                    <span class="apple-badge apple-state-${job.state.replace(' ', '_')}">
                         ${job.state}
                     </span>
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-600">${job.frame_count}</td>
-                <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-600">${job.annotation_count}</td>
-                <td class="px-4 py-3 text-sm text-right font-semibold text-purple-600">${job.label_count}</td>
-                <td class="px-4 py-3 text-sm text-center">
+                <td class="text-gray-500">${job.frame_count}</td>
+                <td class="text-right font-semibold text-indigo-600">${job.annotation_count}</td>
+                <td class="text-right font-semibold text-purple-600">${job.label_count}</td>
+                <td class="text-center">
                     <button onclick="showJobLabels(${job.id})"
-                            class="px-3 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700">
+                            class="apple-btn apple-btn-primary apple-btn-sm">
                         View Labels
                     </button>
                 </td>
@@ -469,35 +504,14 @@
         document.getElementById('jobs-total-annotations').textContent = data.total_annotations;
     }
 
-    function getStageClass(stage) {
-        switch(stage) {
-            case 'annotation': return 'bg-yellow-100 text-yellow-700';
-            case 'validation': return 'bg-blue-100 text-blue-700';
-            case 'acceptance': return 'bg-green-100 text-green-700';
-            default: return 'bg-gray-100 text-gray-700';
-        }
-    }
-
-    function getStateClass(state) {
-        switch(state) {
-            case 'completed': return 'bg-green-100 text-green-700';
-            case 'in progress': return 'bg-blue-100 text-blue-700';
-            case 'rejected': return 'bg-red-100 text-red-700';
-            default: return 'bg-gray-100 text-gray-700';
-        }
-    }
-
     // Toggle labels data with fetch
     async function toggleLabelsData() {
         const toggle = document.getElementById('labels-toggle');
-        const label = document.getElementById('labels-toggle-label');
         const loading = document.getElementById('labels-loading');
         const stats = document.getElementById('labels-stats');
         const charts = document.getElementById('labels-charts');
 
         if (toggle.checked) {
-            label.textContent = 'On';
-
             if (!loadedLabelsHistory) {
                 loading.classList.remove('hidden');
                 stats.classList.add('hidden');
@@ -529,7 +543,6 @@
             stats.classList.remove('hidden');
             charts.classList.remove('hidden');
         } else {
-            label.textContent = 'Off';
             stats.classList.add('hidden');
             charts.classList.add('hidden');
         }
@@ -553,10 +566,10 @@
             if (isUnmapped) hasUnmapped = true;
             const rowClass = isUnmapped ? 'bg-yellow-50' : '';
             return `
-                <tr class="hover:bg-gray-50 ${rowClass}">
-                    <td class="px-4 py-2 text-sm text-gray-800 border">${label.name}</td>
-                    <td class="px-4 py-2 text-sm text-right font-semibold text-indigo-600 border">${label.count}</td>
-                    <td class="px-4 py-2 text-sm text-right text-gray-600 border">${percentage}%</td>
+                <tr class="${rowClass}">
+                    <td>${label.name}</td>
+                    <td class="text-right font-semibold text-indigo-600">${label.count}</td>
+                    <td class="text-right text-gray-500">${percentage}%</td>
                 </tr>
             `;
         }).join('');
@@ -576,11 +589,9 @@
         ['bar', 'pie', 'timeline'].forEach(t => {
             const btn = document.getElementById(`chart-btn-${t}`);
             if (t === type) {
-                btn.classList.remove('bg-gray-200', 'text-gray-700');
-                btn.classList.add('bg-indigo-600', 'text-white');
+                btn.className = 'apple-btn apple-btn-primary apple-btn-sm';
             } else {
-                btn.classList.remove('bg-indigo-600', 'text-white');
-                btn.classList.add('bg-gray-200', 'text-gray-700');
+                btn.className = 'apple-btn apple-btn-secondary apple-btn-sm';
             }
         });
 
@@ -602,7 +613,7 @@
             y: labels.map(l => l.count),
             type: 'bar',
             marker: {
-                color: labels.map(l => l.name.includes('(*)') ? '#fbbf24' : '#6366f1')
+                color: labels.map(l => l.name.includes('(*)') ? '#fbbf24' : '#007AFF')
             }
         };
 
@@ -610,7 +621,9 @@
             title: 'Label Distribution',
             xaxis: { title: 'Label', tickangle: -45 },
             yaxis: { title: 'Count' },
-            margin: { b: 150 }
+            margin: { b: 150 },
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent'
         };
 
         Plotly.newPlot(container, [trace], layout, { responsive: true });
@@ -628,7 +641,9 @@
         };
 
         const layout = {
-            title: 'Label Distribution (Percentage)'
+            title: 'Label Distribution (Percentage)',
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent'
         };
 
         Plotly.newPlot(container, [trace], layout, { responsive: true });
@@ -654,7 +669,9 @@
             title: 'Label Trends Over Time',
             xaxis: { title: 'Time' },
             yaxis: { title: 'Count' },
-            legend: { orientation: 'h', y: -0.2 }
+            legend: { orientation: 'h', y: -0.2 },
+            paper_bgcolor: 'transparent',
+            plot_bgcolor: 'transparent'
         };
 
         Plotly.newPlot(container, traces, layout, { responsive: true });
@@ -669,10 +686,11 @@
         document.getElementById('modal-job-id').textContent = jobId;
         document.getElementById('modal-total-labels').textContent = '-';
         document.getElementById('modal-total-annotations').textContent = '-';
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center py-4">Loading...</td></tr>';
-        chartContainer.innerHTML = '<div class="flex justify-center items-center h-64"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center py-8">Loading...</td></tr>';
+        chartContainer.innerHTML = '<div class="flex justify-center items-center h-64"><div class="apple-spinner"></div></div>';
 
         modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
 
         try {
             const response = await fetch(`/job/${jobId}/analytics/labels`, {
@@ -695,9 +713,9 @@
                 const rowClass = isUnmapped ? 'bg-yellow-50' : '';
                 return `
                     <tr class="${rowClass}">
-                        <td class="px-4 py-2 text-sm text-gray-800 border">${label.name}</td>
-                        <td class="px-4 py-2 text-sm text-right font-semibold text-indigo-600 border">${label.count}</td>
-                        <td class="px-4 py-2 text-sm text-right text-gray-600 border">${percentage}%</td>
+                        <td>${label.name}</td>
+                        <td class="text-right font-semibold text-indigo-600">${label.count}</td>
+                        <td class="text-right text-gray-500">${percentage}%</td>
                     </tr>
                 `;
             }).join('');
@@ -710,7 +728,7 @@
                 y: data.labels.map(l => l.count),
                 type: 'bar',
                 marker: {
-                    color: data.labels.map(l => l.name.includes('(*)') ? '#fbbf24' : '#6366f1')
+                    color: data.labels.map(l => l.name.includes('(*)') ? '#fbbf24' : '#007AFF')
                 }
             };
 
@@ -718,21 +736,25 @@
                 title: `Job ${jobId} - Label Distribution`,
                 xaxis: { title: 'Label', tickangle: -45 },
                 yaxis: { title: 'Count' },
-                margin: { b: 120 }
+                margin: { b: 120 },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent'
             };
 
             Plotly.newPlot(chartContainer, [trace], layout, { responsive: true });
 
         } catch (error) {
             console.error('Error loading job labels:', error);
-            tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-red-500">Failed to load: ${error.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="3" class="text-center py-8 text-red-500">Failed to load: ${error.message}</td></tr>`;
             chartContainer.innerHTML = '<p class="text-center text-red-500">Failed to load chart</p>';
         }
     }
 
     // Close job labels modal
     function closeJobLabelsModal() {
-        document.getElementById('job-labels-modal').classList.add('hidden');
+        const modal = document.getElementById('job-labels-modal');
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
     }
 
     // Report data (timeline only by default)
@@ -756,9 +778,9 @@
 
         let html = `
             <div class="print-content">
-                <div class="text-center mb-6">
-                    <h1 class="text-2xl font-bold text-gray-800">${reportData.taskName}</h1>
-                    <p class="text-gray-500">Task ID: ${reportData.taskId} | Generated: ${new Date().toLocaleString()}</p>
+                <div class="text-center mb-8">
+                    <h1 class="apple-title-2 text-gray-900">${reportData.taskName}</h1>
+                    <p class="apple-subheadline text-gray-500 mt-2">Task ID: ${reportData.taskId} | Generated: ${new Date().toLocaleString()}</p>
                 </div>
         `;
 
@@ -785,120 +807,131 @@
             });
 
             html += `
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="bg-gray-50 rounded p-3 text-center">
-                        <div class="text-2xl font-bold text-gray-800">${loadedJobsData.total_jobs}</div>
-                        <div class="text-sm text-gray-500">Total Jobs</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <div class="apple-stat-card text-center">
+                        <p class="apple-stat-value text-2xl">${loadedJobsData.total_jobs}</p>
+                        <p class="apple-stat-label">Total Jobs</p>
                     </div>
-                    <div class="bg-gray-50 rounded p-3 text-center">
-                        <div class="text-2xl font-bold text-indigo-600">${loadedJobsData.total_annotations}</div>
-                        <div class="text-sm text-gray-500">Total Annotations</div>
+                    <div class="apple-stat-card text-center">
+                        <p class="apple-stat-value text-2xl primary">${loadedJobsData.total_annotations}</p>
+                        <p class="apple-stat-label">Total Annotations</p>
                     </div>
-                    <div class="bg-gray-50 rounded p-3 text-center">
-                        <div class="text-2xl font-bold text-gray-800">${loadedJobsData.total_frames}</div>
-                        <div class="text-sm text-gray-500">Total Frames</div>
+                    <div class="apple-stat-card text-center">
+                        <p class="apple-stat-value text-2xl">${loadedJobsData.total_frames}</p>
+                        <p class="apple-stat-label">Total Frames</p>
                     </div>
-                    <div class="bg-gray-50 rounded p-3 text-center">
-                        <div class="text-2xl font-bold text-purple-600">${loadedJobsData.total_jobs > 0 ? (loadedJobsData.total_annotations / loadedJobsData.total_jobs).toFixed(1) : 0}</div>
-                        <div class="text-sm text-gray-500">Avg Ann/Job</div>
+                    <div class="apple-stat-card text-center">
+                        <p class="apple-stat-value text-2xl purple">${loadedJobsData.total_jobs > 0 ? (loadedJobsData.total_annotations / loadedJobsData.total_jobs).toFixed(1) : 0}</p>
+                        <p class="apple-stat-label">Avg Ann/Job</p>
                     </div>
                 </div>
 
-                <h3 class="text-lg font-semibold text-gray-700 mb-3">Annotations by Assignee</h3>
-                <table class="w-full mb-6 border">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="px-4 py-2 text-left border">Assignee</th>
-                            <th class="px-4 py-2 text-right border">Jobs</th>
-                            <th class="px-4 py-2 text-right border">Frames</th>
-                            <th class="px-4 py-2 text-right border">Annotations</th>
-                            <th class="px-4 py-2 text-right border">Avg/Job</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <h3 class="apple-headline text-gray-900 mb-4">Annotations by Assignee</h3>
+                <div class="apple-card mb-6">
+                    <table class="apple-table">
+                        <thead>
+                            <tr>
+                                <th>Assignee</th>
+                                <th class="text-right">Jobs</th>
+                                <th class="text-right">Frames</th>
+                                <th class="text-right">Annotations</th>
+                                <th class="text-right">Avg/Job</th>
+                            </tr>
+                        </thead>
+                        <tbody>
             `;
 
             Object.entries(jobsByAssignee).forEach(([assignee, data]) => {
                 const avg = data.jobs > 0 ? (data.annotations / data.jobs).toFixed(1) : 0;
                 html += `
                     <tr>
-                        <td class="px-4 py-2 border">${assignee}</td>
-                        <td class="px-4 py-2 text-right border">${data.jobs}</td>
-                        <td class="px-4 py-2 text-right border">${data.frames}</td>
-                        <td class="px-4 py-2 text-right border font-semibold">${data.annotations}</td>
-                        <td class="px-4 py-2 text-right border">${avg}</td>
+                        <td>${assignee}</td>
+                        <td class="text-right">${data.jobs}</td>
+                        <td class="text-right">${data.frames}</td>
+                        <td class="text-right font-semibold">${data.annotations}</td>
+                        <td class="text-right">${avg}</td>
                     </tr>
                 `;
             });
 
             html += `
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
 
-                <h3 class="text-lg font-semibold text-gray-700 mb-3">Jobs by Stage</h3>
-                <table class="w-full mb-6 border">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="px-4 py-2 text-left border">Stage</th>
-                            <th class="px-4 py-2 text-right border">Jobs</th>
-                            <th class="px-4 py-2 text-right border">Annotations</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <h3 class="apple-headline text-gray-900 mb-4">Jobs by Stage</h3>
+                <div class="apple-card mb-6">
+                    <table class="apple-table">
+                        <thead>
+                            <tr>
+                                <th>Stage</th>
+                                <th class="text-right">Jobs</th>
+                                <th class="text-right">Annotations</th>
+                            </tr>
+                        </thead>
+                        <tbody>
             `;
 
             Object.entries(jobsByStage).forEach(([stage, data]) => {
                 html += `
                     <tr>
-                        <td class="px-4 py-2 border capitalize">${stage}</td>
-                        <td class="px-4 py-2 text-right border">${data.count}</td>
-                        <td class="px-4 py-2 text-right border font-semibold">${data.annotations}</td>
+                        <td class="capitalize">${stage}</td>
+                        <td class="text-right">${data.count}</td>
+                        <td class="text-right font-semibold">${data.annotations}</td>
                     </tr>
                 `;
             });
 
             html += `
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
 
-                <h3 class="text-lg font-semibold text-gray-700 mb-3">All Jobs Detail</h3>
-                <table class="w-full mb-6 border text-sm">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="px-3 py-2 text-left border">Job ID</th>
-                            <th class="px-3 py-2 text-left border">Assignee</th>
-                            <th class="px-3 py-2 text-left border">Stage</th>
-                            <th class="px-3 py-2 text-left border">State</th>
-                            <th class="px-3 py-2 text-right border">Frames</th>
-                            <th class="px-3 py-2 text-right border">Annotations</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <h3 class="apple-headline text-gray-900 mb-4">All Jobs Detail</h3>
+                <div class="apple-card mb-6">
+                    <table class="apple-table text-sm">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Assignee</th>
+                                <th>Stage</th>
+                                <th>State</th>
+                                <th class="text-right">Frames</th>
+                                <th class="text-right">Annotations</th>
+                            </tr>
+                        </thead>
+                        <tbody>
             `;
 
             loadedJobsData.jobs.forEach(job => {
                 html += `
                     <tr>
-                        <td class="px-3 py-2 border font-mono">${job.id}</td>
-                        <td class="px-3 py-2 border">${job.assignee}</td>
-                        <td class="px-3 py-2 border capitalize">${job.stage}</td>
-                        <td class="px-3 py-2 border capitalize">${job.state}</td>
-                        <td class="px-3 py-2 text-right border">${job.frame_count}</td>
-                        <td class="px-3 py-2 text-right border font-semibold">${job.annotation_count}</td>
+                        <td class="font-mono">${job.id}</td>
+                        <td>${job.assignee}</td>
+                        <td class="capitalize">${job.stage}</td>
+                        <td class="capitalize">${job.state}</td>
+                        <td class="text-right">${job.frame_count}</td>
+                        <td class="text-right font-semibold">${job.annotation_count}</td>
                     </tr>
                 `;
             });
 
             html += `
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
             `;
         } else {
             html += `
-                <div class="bg-yellow-50 border border-yellow-200 rounded p-4 mb-6">
-                    <p class="text-yellow-700">
-                        <strong>Note:</strong> Job data is not loaded. Enable "Annotations by Job" toggle to include job details in the report.
-                    </p>
+                <div class="apple-alert apple-alert-info mb-6">
+                    <div class="apple-alert-icon">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="apple-alert-content">
+                        <p><strong>Note:</strong> Job data is not loaded. Enable "Annotations by Job" toggle to include job details in the report.</p>
+                    </div>
                 </div>
             `;
         }
@@ -906,16 +939,17 @@
         // Timeline history
         if (reportData.timeline.length > 0) {
             html += `
-                <h3 class="text-lg font-semibold text-gray-700 mb-3">Timeline History</h3>
-                <table class="w-full border text-sm">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="px-3 py-2 text-left border">Date & Time</th>
-                            <th class="px-3 py-2 text-right border">Annotations</th>
-                            <th class="px-3 py-2 text-right border">Change</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <h3 class="apple-headline text-gray-900 mb-4">Timeline History</h3>
+                <div class="apple-card">
+                    <table class="apple-table text-sm">
+                        <thead>
+                            <tr>
+                                <th>Date & Time</th>
+                                <th class="text-right">Annotations</th>
+                                <th class="text-right">Change</th>
+                            </tr>
+                        </thead>
+                        <tbody>
             `;
 
             reportData.timeline.forEach((snapshot, index) => {
@@ -924,16 +958,17 @@
                 const changeStr = index > 0 ? (change > 0 ? `+${change}` : change) : '-';
                 html += `
                     <tr>
-                        <td class="px-3 py-2 border">${snapshot.time}</td>
-                        <td class="px-3 py-2 text-right border font-semibold">${snapshot.count}</td>
-                        <td class="px-3 py-2 text-right border ${changeClass}">${changeStr}</td>
+                        <td>${snapshot.time}</td>
+                        <td class="text-right font-semibold">${snapshot.count}</td>
+                        <td class="text-right ${changeClass}">${changeStr}</td>
                     </tr>
                 `;
             });
 
             html += `
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
             `;
         }
 
@@ -941,10 +976,12 @@
 
         content.innerHTML = html;
         modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
     }
 
     function closeReportModal() {
         document.getElementById('report-modal').classList.add('hidden');
+        document.body.style.overflow = '';
     }
 
     function exportCSV() {
@@ -982,6 +1019,7 @@
             <head>
                 <title>Analytics Report - ${reportData.taskName}</title>
                 <script src="https://cdn.tailwindcss.com"><\/script>
+                <link rel="stylesheet" href="/static/css/apple-design.css">
                 <style>
                     @media print {
                         body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -998,6 +1036,24 @@
             printWindow.print();
         };
     }
+
+    // Close modals on escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeJobLabelsModal();
+            closeReportModal();
+        }
+    });
+
+    // Close modals on overlay click
+    document.querySelectorAll('.apple-modal-overlay').forEach(overlay => {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.classList.add('hidden');
+                document.body.style.overflow = '';
+            }
+        });
+    });
 
     // Chart with data labels - increased height
     {% if history %}
@@ -1018,12 +1074,15 @@
                     {{ snapshot.annotation_count }}{% if not loop.last %},{% endif %}
                 {% endfor %}
             ],
-            borderColor: 'rgb(79, 70, 229)',
-            backgroundColor: 'rgba(79, 70, 229, 0.1)',
+            borderColor: '#007AFF',
+            backgroundColor: 'rgba(0, 122, 255, 0.1)',
             tension: 0.3,
             fill: true,
             pointRadius: 6,
-            pointHoverRadius: 10
+            pointHoverRadius: 10,
+            pointBackgroundColor: '#007AFF',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2
         }]
     };
 
@@ -1049,6 +1108,13 @@
                 tooltip: {
                     mode: 'index',
                     intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderWidth: 1,
+                    cornerRadius: 8,
+                    padding: 12,
                     callbacks: {
                         label: function(context) {
                             let label = context.dataset.label || '';
@@ -1066,7 +1132,7 @@
                     align: 'top',
                     anchor: 'end',
                     offset: 8,
-                    color: 'rgb(79, 70, 229)',
+                    color: '#007AFF',
                     font: {
                         weight: 'bold',
                         size: 12
@@ -1082,12 +1148,18 @@
                     grace: '15%',
                     ticks: {
                         precision: 0
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
                     }
                 },
                 x: {
                     ticks: {
                         maxRotation: 45,
                         minRotation: 0
+                    },
+                    grid: {
+                        display: false
                     }
                 }
             },
