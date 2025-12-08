@@ -674,7 +674,8 @@ async def get_jobs_with_annotations(
             "stage": job["stage"],
             "state": job["state"],
             "frame_count": job["frame_count"],
-            "annotation_count": job["annotation_count"]
+            "annotation_count": job["annotation_count"],
+            "label_count": job.get("label_count", 0)
         }
         for job in jobs_with_annotations
     ]
@@ -695,7 +696,7 @@ async def refresh_analytics(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Capture a new annotation snapshot for a task."""
+    """Capture a new annotation and label snapshot for a task."""
     # Get task info
     client = CVATClient(user.cvat_host, user.cvat_token)
     tasks = await client.get_tasks()
@@ -705,13 +706,104 @@ async def refresh_analytics(
         await client.close()
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Capture snapshot
+    # Capture snapshots (both annotation and label)
     analytics = AnalyticsService(db)
     await analytics.capture_snapshot(client, task_id, task.name)
+    await analytics.capture_label_snapshot(client, task_id, task.name)
 
     await client.close()
 
     return RedirectResponse(url=f"/task/{task_id}/analytics", status_code=303)
+
+
+@router.get("/job/{job_id}/analytics/labels")
+async def get_job_labels_statistics(
+    job_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """API endpoint to fetch detailed label statistics for a specific job."""
+    try:
+        client = CVATClient(user.cvat_host, user.cvat_token)
+        label_stats = await client.get_job_labels_statistics(job_id)
+        await client.close()
+
+        sorted_labels = sorted(label_stats.items(), key=lambda x: x[1], reverse=True)
+
+        response_data = {
+            "job_id": job_id,
+            "labels": [{"name": name, "count": count} for name, count in sorted_labels],
+            "total_labels": len(sorted_labels),
+            "total_annotations": sum(label_stats.values())
+        }
+
+        return JSONResponse(response_data)
+    except Exception as e:
+        print(f"Error in get_job_labels_statistics endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            {"error": f"Failed to fetch job label statistics: {str(e)}"},
+            status_code=500
+        )
+
+
+@router.get("/task/{task_id}/analytics/labels/history")
+async def get_labels_history(
+    task_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """API endpoint to fetch label statistics history for interactive charts."""
+    import json
+    from collections import defaultdict
+
+    try:
+        analytics = AnalyticsService(db)
+        history = await analytics.get_label_history(task_id)
+
+        if not history:
+            return JSONResponse({
+                "has_data": False,
+                "message": "No historical data available. Click 'Refresh Data' to start tracking."
+            })
+
+        # Parse snapshots and organize data for time series
+        timeline_data = defaultdict(list)
+        timestamps = []
+
+        for snapshot in history:
+            label_stats = json.loads(snapshot.label_stats)
+            timestamp = snapshot.snapshot_time.strftime('%Y-%m-%d %H:%M')
+            timestamps.append(timestamp)
+
+            for label_name, count in label_stats.items():
+                timeline_data[label_name].append(count)
+
+        # Get latest snapshot for current stats
+        latest = history[-1]
+        latest_stats = json.loads(latest.label_stats)
+        sorted_labels = sorted(latest_stats.items(), key=lambda x: x[1], reverse=True)
+
+        response_data = {
+            "has_data": True,
+            "timestamps": timestamps,
+            "timeline_data": dict(timeline_data),
+            "current_labels": [{"name": name, "count": count} for name, count in sorted_labels],
+            "total_labels": len(sorted_labels),
+            "total_annotations": sum(latest_stats.values()),
+            "snapshots_count": len(history)
+        }
+
+        return JSONResponse(response_data)
+    except Exception as e:
+        print(f"Error in get_labels_history endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            {"error": f"Failed to fetch label history: {str(e)}"},
+            status_code=500
+        )
 
 
 @router.get("/notifications", response_class=HTMLResponse)

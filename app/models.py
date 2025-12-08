@@ -127,3 +127,14 @@ class RejectedJobTracker(Base):
 
     first_reviewer = relationship("User", foreign_keys=[first_reviewer_id])
     rejected_by_user = relationship("User", foreign_keys=[rejected_by])
+
+
+class LabelSnapshot(Base):
+    """Snapshot of label statistics for a task at a specific time."""
+    __tablename__ = "label_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    cvat_task_id = Column(Integer, nullable=False, index=True)
+    task_name = Column(String(500), nullable=True)
+    label_stats = Column(String(10000), nullable=False)  # JSON string of {label_name: count}
+    snapshot_time = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

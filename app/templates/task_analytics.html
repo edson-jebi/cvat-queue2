@@ -2,6 +2,16 @@
 {% block title %}Analytics - {{ task.name if task else 'Task' }} - CVAT Queue{% endblock %}
 
 {% block content %}
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
+    <div class="text-center">
+        <div class="inline-block animate-spin rounded-full h-24 w-24 border-t-4 border-b-4 border-indigo-500"></div>
+        <p class="mt-4 text-white text-xl font-semibold">Refreshing Data...</p>
+        <p class="mt-2 text-gray-300 text-sm">Capturing new snapshot with updated label statistics</p>
+    </div>
+</div>
+
 <div class="mb-6">
     <a href="/task/{{ task_id }}" class="text-indigo-600 hover:text-indigo-800 text-sm">&larr; Back to Task</a>
     <div class="flex justify-between items-start mt-2">
@@ -16,7 +26,7 @@
             <button onclick="generateReport()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm">
                 Export Report
             </button>
-            <form method="POST" action="/task/{{ task_id }}/analytics/refresh">
+            <form method="POST" action="/task/{{ task_id }}/analytics/refresh" onsubmit="showLoadingOverlay()">
                 <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">
                     Refresh Data
                 </button>
@@ -121,6 +131,8 @@
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">State</th>
                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Frames</th>
                     <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Annotations</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Labels</th>
+                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
             </thead>
             <tbody id="jobs-tbody" class="divide-y">
@@ -128,11 +140,142 @@
             </tbody>
             <tfoot class="bg-gray-50">
                 <tr>
-                    <td colspan="5" class="px-4 py-3 text-sm font-medium text-gray-700 text-right">Total:</td>
+                    <td colspan="7" class="px-4 py-3 text-sm font-medium text-gray-700 text-right">Total:</td>
                     <td class="px-4 py-3 text-sm text-right font-bold text-indigo-600" id="jobs-total-annotations">-</td>
                 </tr>
             </tfoot>
         </table>
+    </div>
+</div>
+
+<!-- Labels Statistics Toggle Section -->
+<div class="bg-white rounded-lg shadow mb-6">
+    <div class="px-4 py-3 border-b flex justify-between items-center">
+        <h2 class="font-semibold text-gray-700">Labels Statistics</h2>
+        <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="labels-toggle" class="sr-only peer" onchange="toggleLabelsData()">
+            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            <span class="ml-3 text-sm font-medium text-gray-700" id="labels-toggle-label">Off</span>
+        </label>
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="labels-loading" class="hidden p-8 text-center">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <p class="mt-2 text-gray-500">Loading label statistics...</p>
+    </div>
+
+    <!-- Labels Stats (dynamic) -->
+    <div id="labels-stats" class="hidden p-4 border-b">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Total Labels</h3>
+                <p class="text-xl font-bold text-gray-800" id="stat-total-labels">-</p>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Total Annotations</h3>
+                <p class="text-xl font-bold text-indigo-600" id="stat-labels-annotations">-</p>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Snapshots</h3>
+                <p class="text-xl font-bold text-gray-800" id="stat-labels-snapshots">-</p>
+            </div>
+            <div class="bg-gray-50 rounded p-3">
+                <h3 class="text-sm font-medium text-gray-500">Avg Ann/Label</h3>
+                <p class="text-xl font-bold text-purple-600" id="stat-avg-label-annotations">-</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Labels Charts -->
+    <div id="labels-charts" class="hidden p-4 space-y-6">
+        <!-- Chart Type Buttons -->
+        <div class="flex gap-2 justify-center">
+            <button onclick="showLabelChart('bar')" id="chart-btn-bar" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm">
+                Bar Chart
+            </button>
+            <button onclick="showLabelChart('pie')" id="chart-btn-pie" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+                Pie Chart
+            </button>
+            <button onclick="showLabelChart('timeline')" id="chart-btn-timeline" class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+                Timeline
+            </button>
+        </div>
+
+        <!-- Chart Container -->
+        <div id="labels-chart-container" style="min-height: 400px;"></div>
+
+        <!-- Labels Table -->
+        <div id="labels-table-container">
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">Label Details</h3>
+            <table class="w-full border">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase border">Label Name</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase border">Count</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase border">Percentage</th>
+                    </tr>
+                </thead>
+                <tbody id="labels-tbody" class="divide-y">
+                    <!-- Labels will be loaded here dynamically -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Note about asterisk -->
+        <div id="unmapped-note" class="hidden mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+            <strong>Note:</strong> Labels marked with (*) have unmapped or invalid label IDs. This may indicate deleted labels or data synchronization issues.
+        </div>
+    </div>
+</div>
+
+<!-- Job Labels Modal -->
+<div id="job-labels-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-auto">
+        <div class="px-6 py-4 border-b flex justify-between items-center sticky top-0 bg-white">
+            <h2 class="text-xl font-bold text-gray-800">Job <span id="modal-job-id"></span> - Label Statistics</h2>
+            <button onclick="closeJobLabelsModal()" class="text-gray-500 hover:text-gray-700">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="p-6">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="bg-gray-50 rounded p-3">
+                    <h3 class="text-sm font-medium text-gray-500">Unique Labels</h3>
+                    <p class="text-xl font-bold text-gray-800" id="modal-total-labels">-</p>
+                </div>
+                <div class="bg-gray-50 rounded p-3">
+                    <h3 class="text-sm font-medium text-gray-500">Total Annotations</h3>
+                    <p class="text-xl font-bold text-indigo-600" id="modal-total-annotations">-</p>
+                </div>
+            </div>
+
+            <!-- Chart -->
+            <div id="modal-chart-container" class="mb-6" style="min-height: 300px;"></div>
+
+            <!-- Table -->
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">Label Details</h3>
+            <table class="w-full border">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase border">Label</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase border">Count</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase border">Percentage</th>
+                    </tr>
+                </thead>
+                <tbody id="modal-labels-tbody">
+                    <!-- Labels will be loaded here -->
+                </tbody>
+            </table>
+
+            <!-- Unmapped note -->
+            <div id="modal-unmapped-note" class="hidden mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                <strong>Note:</strong> Labels marked with (*) have unmapped or invalid label IDs.
+            </div>
+        </div>
     </div>
 </div>
 
@@ -213,9 +356,27 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <script>
-    // Store loaded job data
+    // Store loaded data
     let loadedJobsData = null;
+    let loadedLabelsData = null;
+    let loadedLabelsHistory = null;
+    let currentLabelChartType = 'bar';
+
+    // Show loading overlay
+    function showLoadingOverlay() {
+        const overlay = document.getElementById('loading-overlay');
+        overlay.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+
+    // Hide loading overlay
+    function hideLoadingOverlay() {
+        const overlay = document.getElementById('loading-overlay');
+        overlay.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
 
     // Toggle history table
     function toggleHistoryTable() {
@@ -295,6 +456,13 @@
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-600">${job.frame_count}</td>
                 <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-600">${job.annotation_count}</td>
+                <td class="px-4 py-3 text-sm text-right font-semibold text-purple-600">${job.label_count}</td>
+                <td class="px-4 py-3 text-sm text-center">
+                    <button onclick="showJobLabels(${job.id})"
+                            class="px-3 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700">
+                        View Labels
+                    </button>
+                </td>
             </tr>
         `).join('');
 
@@ -317,6 +485,254 @@
             case 'rejected': return 'bg-red-100 text-red-700';
             default: return 'bg-gray-100 text-gray-700';
         }
+    }
+
+    // Toggle labels data with fetch
+    async function toggleLabelsData() {
+        const toggle = document.getElementById('labels-toggle');
+        const label = document.getElementById('labels-toggle-label');
+        const loading = document.getElementById('labels-loading');
+        const stats = document.getElementById('labels-stats');
+        const charts = document.getElementById('labels-charts');
+
+        if (toggle.checked) {
+            label.textContent = 'On';
+
+            if (!loadedLabelsHistory) {
+                loading.classList.remove('hidden');
+                stats.classList.add('hidden');
+                charts.classList.add('hidden');
+
+                try {
+                    const response = await fetch('/task/{{ task_id }}/analytics/labels/history', {
+                        headers: { 'X-Requested-With': 'fetch' }
+                    });
+
+                    if (!response.ok) throw new Error('Failed to load labels data');
+
+                    loadedLabelsHistory = await response.json();
+
+                    if (!loadedLabelsHistory.has_data) {
+                        loading.innerHTML = `<p class="text-yellow-600">${loadedLabelsHistory.message}</p>`;
+                        return;
+                    }
+
+                    renderLabelsDataWithHistory(loadedLabelsHistory);
+                } catch (error) {
+                    console.error('Error loading labels:', error);
+                    loading.innerHTML = '<p class="text-red-500">Failed to load label statistics. Please try again.</p>';
+                    return;
+                }
+            }
+
+            loading.classList.add('hidden');
+            stats.classList.remove('hidden');
+            charts.classList.remove('hidden');
+        } else {
+            label.textContent = 'Off';
+            stats.classList.add('hidden');
+            charts.classList.add('hidden');
+        }
+    }
+
+    // Render labels data with history
+    function renderLabelsDataWithHistory(data) {
+        // Update stats
+        document.getElementById('stat-total-labels').textContent = data.total_labels;
+        document.getElementById('stat-labels-annotations').textContent = data.total_annotations;
+        document.getElementById('stat-labels-snapshots').textContent = data.snapshots_count;
+        document.getElementById('stat-avg-label-annotations').textContent =
+            data.total_labels > 0 ? (data.total_annotations / data.total_labels).toFixed(1) : '0';
+
+        // Build labels table
+        const tbody = document.getElementById('labels-tbody');
+        let hasUnmapped = false;
+        tbody.innerHTML = data.current_labels.map(label => {
+            const percentage = data.total_annotations > 0 ? ((label.count / data.total_annotations) * 100).toFixed(1) : '0';
+            const isUnmapped = label.name.includes('(*)');
+            if (isUnmapped) hasUnmapped = true;
+            const rowClass = isUnmapped ? 'bg-yellow-50' : '';
+            return `
+                <tr class="hover:bg-gray-50 ${rowClass}">
+                    <td class="px-4 py-2 text-sm text-gray-800 border">${label.name}</td>
+                    <td class="px-4 py-2 text-sm text-right font-semibold text-indigo-600 border">${label.count}</td>
+                    <td class="px-4 py-2 text-sm text-right text-gray-600 border">${percentage}%</td>
+                </tr>
+            `;
+        }).join('');
+
+        // Show/hide unmapped note
+        document.getElementById('unmapped-note').classList.toggle('hidden', !hasUnmapped);
+
+        // Show default chart
+        showLabelChart('bar');
+    }
+
+    // Show label chart by type
+    function showLabelChart(type) {
+        currentLabelChartType = type;
+
+        // Update button styles
+        ['bar', 'pie', 'timeline'].forEach(t => {
+            const btn = document.getElementById(`chart-btn-${t}`);
+            if (t === type) {
+                btn.classList.remove('bg-gray-200', 'text-gray-700');
+                btn.classList.add('bg-indigo-600', 'text-white');
+            } else {
+                btn.classList.remove('bg-indigo-600', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-700');
+            }
+        });
+
+        const container = document.getElementById('labels-chart-container');
+
+        if (type === 'bar') {
+            renderBarChart(container, loadedLabelsHistory.current_labels);
+        } else if (type === 'pie') {
+            renderPieChart(container, loadedLabelsHistory.current_labels);
+        } else if (type === 'timeline') {
+            renderTimelineChart(container, loadedLabelsHistory);
+        }
+    }
+
+    // Render bar chart with Plotly
+    function renderBarChart(container, labels) {
+        const trace = {
+            x: labels.map(l => l.name),
+            y: labels.map(l => l.count),
+            type: 'bar',
+            marker: {
+                color: labels.map(l => l.name.includes('(*)') ? '#fbbf24' : '#6366f1')
+            }
+        };
+
+        const layout = {
+            title: 'Label Distribution',
+            xaxis: { title: 'Label', tickangle: -45 },
+            yaxis: { title: 'Count' },
+            margin: { b: 150 }
+        };
+
+        Plotly.newPlot(container, [trace], layout, { responsive: true });
+    }
+
+    // Render pie chart with Plotly
+    function renderPieChart(container, labels) {
+        const trace = {
+            labels: labels.map(l => l.name),
+            values: labels.map(l => l.count),
+            type: 'pie',
+            marker: {
+                colors: labels.map((l, i) => l.name.includes('(*)') ? '#fbbf24' : `hsl(${(i * 360 / labels.length)}, 70%, 60%)`)
+            }
+        };
+
+        const layout = {
+            title: 'Label Distribution (Percentage)'
+        };
+
+        Plotly.newPlot(container, [trace], layout, { responsive: true });
+    }
+
+    // Render timeline chart with Plotly
+    function renderTimelineChart(container, data) {
+        const traces = [];
+        const labelNames = Object.keys(data.timeline_data);
+
+        labelNames.forEach((label, i) => {
+            traces.push({
+                x: data.timestamps,
+                y: data.timeline_data[label],
+                name: label,
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: label.includes('(*)') ? '#fbbf24' : `hsl(${(i * 360 / labelNames.length)}, 70%, 50%)` }
+            });
+        });
+
+        const layout = {
+            title: 'Label Trends Over Time',
+            xaxis: { title: 'Time' },
+            yaxis: { title: 'Count' },
+            legend: { orientation: 'h', y: -0.2 }
+        };
+
+        Plotly.newPlot(container, traces, layout, { responsive: true });
+    }
+
+    // Show job labels modal
+    async function showJobLabels(jobId) {
+        const modal = document.getElementById('job-labels-modal');
+        const tbody = document.getElementById('modal-labels-tbody');
+        const chartContainer = document.getElementById('modal-chart-container');
+
+        document.getElementById('modal-job-id').textContent = jobId;
+        document.getElementById('modal-total-labels').textContent = '-';
+        document.getElementById('modal-total-annotations').textContent = '-';
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center py-4">Loading...</td></tr>';
+        chartContainer.innerHTML = '<div class="flex justify-center items-center h-64"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
+
+        modal.classList.remove('hidden');
+
+        try {
+            const response = await fetch(`/job/${jobId}/analytics/labels`, {
+                headers: { 'X-Requested-With': 'fetch' }
+            });
+
+            if (!response.ok) throw new Error('Failed to load job label statistics');
+
+            const data = await response.json();
+
+            document.getElementById('modal-total-labels').textContent = data.total_labels;
+            document.getElementById('modal-total-annotations').textContent = data.total_annotations;
+
+            // Render table
+            let hasUnmapped = false;
+            tbody.innerHTML = data.labels.map(label => {
+                const percentage = data.total_annotations > 0 ? ((label.count / data.total_annotations) * 100).toFixed(1) : '0';
+                const isUnmapped = label.name.includes('(*)');
+                if (isUnmapped) hasUnmapped = true;
+                const rowClass = isUnmapped ? 'bg-yellow-50' : '';
+                return `
+                    <tr class="${rowClass}">
+                        <td class="px-4 py-2 text-sm text-gray-800 border">${label.name}</td>
+                        <td class="px-4 py-2 text-sm text-right font-semibold text-indigo-600 border">${label.count}</td>
+                        <td class="px-4 py-2 text-sm text-right text-gray-600 border">${percentage}%</td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('modal-unmapped-note').classList.toggle('hidden', !hasUnmapped);
+
+            // Render chart
+            const trace = {
+                x: data.labels.map(l => l.name),
+                y: data.labels.map(l => l.count),
+                type: 'bar',
+                marker: {
+                    color: data.labels.map(l => l.name.includes('(*)') ? '#fbbf24' : '#6366f1')
+                }
+            };
+
+            const layout = {
+                title: `Job ${jobId} - Label Distribution`,
+                xaxis: { title: 'Label', tickangle: -45 },
+                yaxis: { title: 'Count' },
+                margin: { b: 120 }
+            };
+
+            Plotly.newPlot(chartContainer, [trace], layout, { responsive: true });
+
+        } catch (error) {
+            console.error('Error loading job labels:', error);
+            tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-red-500">Failed to load: ${error.message}</td></tr>`;
+            chartContainer.innerHTML = '<p class="text-center text-red-500">Failed to load chart</p>';
+        }
+    }
+
+    // Close job labels modal
+    function closeJobLabelsModal() {
+        document.getElementById('job-labels-modal').classList.add('hidden');
     }
 
     // Report data (timeline only by default)
