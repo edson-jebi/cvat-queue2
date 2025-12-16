@@ -561,6 +561,20 @@ h1, h2, h3, h4, h5, h6 {
     transform: translateY(-1px);
 }
 
+.apple-btn-warning {
+    background: linear-gradient(180deg, #FF9F0A 0%, #FF9500 100%);
+    color: white;
+    box-shadow: 0 1px 2px rgba(255, 149, 0, 0.15),
+                0 4px 12px rgba(255, 149, 0, 0.2);
+}
+
+.apple-btn-warning:hover {
+    background: linear-gradient(180deg, #FFB340 0%, #FF9F0A 100%);
+    box-shadow: 0 2px 4px rgba(255, 149, 0, 0.2),
+                0 8px 16px rgba(255, 149, 0, 0.25);
+    transform: translateY(-1px);
+}
+
 .apple-btn-ghost {
     background: transparent;
     color: var(--apple-blue);
@@ -664,6 +678,47 @@ h1, h2, h3, h4, h5, h6 {
 .apple-stage-acceptance {
     background: linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%);
     color: #065F46;
+}
+
+/* Progress Bar */
+.apple-progress {
+    width: 100%;
+    height: 6px;
+    background: #E5E7EB;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.apple-progress-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.apple-progress-bar-blue {
+    background: linear-gradient(90deg, #3B82F6 0%, #1D4ED8 100%);
+}
+
+.apple-progress-bar-green {
+    background: linear-gradient(90deg, #22C55E 0%, #16A34A 100%);
+}
+
+.apple-progress-bar-yellow {
+    background: linear-gradient(90deg, #F59E0B 0%, #D97706 100%);
+}
+
+.apple-progress-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.apple-progress-text {
+    font-size: 12px;
+    font-weight: 500;
+    color: #6B7280;
+    min-width: 40px;
+    text-align: right;
 }
 
 /* ============================================
@@ -807,6 +862,12 @@ h1, h2, h3, h4, h5, h6 {
     background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
     border-color: rgba(220, 38, 38, 0.2);
     color: #DC2626;
+}
+
+.apple-alert-warning {
+    background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
+    border-color: rgba(234, 88, 12, 0.2);
+    color: #C2410C;
 }
 
 /* ============================================

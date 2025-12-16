@@ -37,9 +37,9 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     """Main dashboard showing tasks and queue."""
-    # Get CVAT tasks
+    # Get CVAT tasks with jobs progress for completion percentage
     client = CVATClient(user.cvat_host, user.cvat_token)
-    tasks = await client.get_tasks()
+    tasks = await client.get_tasks(include_jobs_progress=True)
     await client.close()
 
     # Get pending queue count
@@ -300,6 +300,58 @@ async def assign_job_from_queue(
     )
     db.add(notification)
     await db.commit()
+
+    return RedirectResponse(url="/queue", status_code=303)
+
+
+@router.post("/queue/{queue_id}/finish-validation")
+async def finish_validation(
+    queue_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+    x_requested_with: str = Header(None)
+):
+    """
+    Finish validation by resetting job to annotation stage.
+    Used when a labeler has too many rejections and cannot fix issues.
+    This removes the job from queue and resets it in CVAT to stage:annotation, state:new.
+    """
+    result = await db.execute(select(QueuedJob).where(QueuedJob.id == queue_id))
+    job = result.scalar_one_or_none()
+
+    if not job:
+        if x_requested_with == "fetch":
+            return JSONResponse({"error": "Job not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Check if user is assigned to this job or is admin
+    if job.assigned_to != user.id and not user.is_admin:
+        if x_requested_with == "fetch":
+            return JSONResponse({"error": "You are not authorized to finish this validation"}, status_code=403)
+        raise HTTPException(status_code=403, detail="You are not authorized to finish this validation")
+
+    # Only allow finish validation for jobs with 2+ rejections
+    if not job.rejection_count or job.rejection_count < 2:
+        if x_requested_with == "fetch":
+            return JSONResponse({"error": "Finish validation is only available for jobs with 2+ rejections"}, status_code=400)
+        raise HTTPException(status_code=400, detail="Finish validation is only available for jobs with 2+ rejections")
+
+    # Reset job in CVAT to annotation stage with new state
+    client = CVATClient(user.cvat_host, user.cvat_token)
+    reset_success = await client.update_job_state(job.cvat_job_id, stage="annotation", state="new")
+    await client.close()
+
+    if not reset_success:
+        if x_requested_with == "fetch":
+            return JSONResponse({"error": "Failed to reset job in CVAT"}, status_code=500)
+        raise HTTPException(status_code=500, detail="Failed to reset job in CVAT")
+
+    # Delete the job from queue (it can be reassigned to a different labeler)
+    await db.delete(job)
+    await db.commit()
+
+    if x_requested_with == "fetch":
+        return JSONResponse({"success": True, "message": "Job reset to annotation stage"})
 
     return RedirectResponse(url="/queue", status_code=303)
 
@@ -806,6 +858,69 @@ async def get_labels_history(
         )
 
 
+@router.get("/task/{task_id}/analytics/rejections")
+async def get_task_rejection_stats(
+    task_id: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """API endpoint to fetch rejection statistics per assignee for a task."""
+    from collections import defaultdict
+    from sqlalchemy import func
+
+    try:
+        # Get all rejection records for this task
+        result = await db.execute(
+            select(RejectedJobTracker, User.username)
+            .outerjoin(User, RejectedJobTracker.rejected_by == User.id)
+            .where(RejectedJobTracker.cvat_task_id == task_id)
+        )
+        rejections = result.all()
+
+        # Get CVAT client to fetch job assignees
+        client = CVATClient(user.cvat_host, user.cvat_token)
+        jobs = await client.get_jobs(task_id)
+        await client.close()
+
+        # Build job_id -> assignee mapping
+        job_assignees = {job.id: job.assignee or "Unassigned" for job in jobs}
+
+        # Aggregate rejections by assignee (the person whose work was rejected)
+        assignee_stats = defaultdict(lambda: {"rejections": 0, "jobs_rejected": set()})
+
+        for tracker, rejected_by_username in rejections:
+            assignee = job_assignees.get(tracker.cvat_job_id, "Unknown")
+            assignee_stats[assignee]["rejections"] += 1
+            assignee_stats[assignee]["jobs_rejected"].add(tracker.cvat_job_id)
+
+        # Convert to list format
+        stats_list = [
+            {
+                "assignee": assignee,
+                "total_rejections": data["rejections"],
+                "unique_jobs_rejected": len(data["jobs_rejected"])
+            }
+            for assignee, data in sorted(assignee_stats.items(), key=lambda x: x[1]["rejections"], reverse=True)
+        ]
+
+        total_rejections = sum(s["total_rejections"] for s in stats_list)
+
+        return JSONResponse({
+            "task_id": task_id,
+            "total_rejections": total_rejections,
+            "by_assignee": stats_list
+        })
+
+    except Exception as e:
+        print(f"Error in get_task_rejection_stats endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            {"error": f"Failed to fetch rejection statistics: {str(e)}"},
+            status_code=500
+        )
+
+
 @router.get("/notifications", response_class=HTMLResponse)
 async def view_notifications(
     request: Request,
@@ -983,3 +1098,61 @@ async def delete_backup(
         raise HTTPException(status_code=500, detail=f"Failed to delete backup: {str(e)}")
 
     return RedirectResponse(url="/admin/backup", status_code=303)
+
+
+@router.get("/api/pending-sync-check")
+async def check_pending_sync(
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check for completed annotation jobs that are not yet in the queue.
+    Returns count of jobs per task that need syncing (for admin users only).
+    Checks the last 10 tasks for performance.
+    """
+    if not user.is_admin:
+        return JSONResponse({"pending_tasks": [], "total_pending": 0})
+
+    client = CVATClient(user.cvat_host, user.cvat_token)
+
+    try:
+        # Get all tasks (limit to recent ones for performance)
+        tasks = await client.get_tasks()
+        tasks = tasks[:10]  # Check only the last 10 tasks
+
+        # Get all queued job IDs for this CVAT host
+        result = await db.execute(
+            select(QueuedJob.cvat_job_id).where(QueuedJob.cvat_host == user.cvat_host)
+        )
+        queued_job_ids = set(row[0] for row in result.all())
+
+        pending_tasks = []
+        total_pending = 0
+
+        for task in tasks:
+            jobs = await client.get_jobs(task.id)
+
+            # Find jobs that are completed annotation but not queued
+            pending_jobs = [
+                j for j in jobs
+                if j.stage == "annotation" and j.state == "completed" and j.id not in queued_job_ids
+            ]
+
+            if pending_jobs:
+                pending_tasks.append({
+                    "task_id": task.id,
+                    "task_name": task.name,
+                    "pending_count": len(pending_jobs)
+                })
+                total_pending += len(pending_jobs)
+
+        await client.close()
+
+        return JSONResponse({
+            "pending_tasks": pending_tasks,
+            "total_pending": total_pending
+        })
+
+    except Exception as e:
+        await client.close()
+        return JSONResponse({"error": str(e), "pending_tasks": [], "total_pending": 0})

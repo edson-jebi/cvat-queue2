@@ -401,6 +401,7 @@
     let loadedJobsData = null;
     let loadedLabelsData = null;
     let loadedLabelsHistory = null;
+    let loadedRejectionsData = null;
     let currentLabelChartType = 'bar';
 
     // Show loading overlay
@@ -772,9 +773,37 @@
         ]
     };
 
-    function generateReport() {
+    async function generateReport() {
         const modal = document.getElementById('report-modal');
         const content = document.getElementById('report-content');
+
+        // Show loading state
+        content.innerHTML = '<div class="flex justify-center items-center p-12"><div class="apple-spinner"></div><p class="ml-4 text-gray-500">Loading report data...</p></div>';
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+
+        // Fetch rejection data if not already loaded
+        if (!loadedRejectionsData) {
+            try {
+                const response = await fetch('/task/{{ task_id }}/analytics/rejections', {
+                    headers: { 'X-Requested-With': 'fetch' }
+                });
+                if (response.ok) {
+                    loadedRejectionsData = await response.json();
+                }
+            } catch (error) {
+                console.error('Error loading rejections:', error);
+                loadedRejectionsData = { total_rejections: 0, by_assignee: [] };
+            }
+        }
+
+        // Build rejection lookup map by assignee
+        const rejectionsByAssignee = {};
+        if (loadedRejectionsData && loadedRejectionsData.by_assignee) {
+            loadedRejectionsData.by_assignee.forEach(r => {
+                rejectionsByAssignee[r.assignee] = r;
+            });
+        }
 
         let html = `
             <div class="print-content">
@@ -806,8 +835,10 @@
                 jobsByStage[job.stage].annotations += job.annotation_count;
             });
 
+            const totalRejections = loadedRejectionsData ? loadedRejectionsData.total_rejections : 0;
+
             html += `
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
                     <div class="apple-stat-card text-center">
                         <p class="apple-stat-value text-2xl">${loadedJobsData.total_jobs}</p>
                         <p class="apple-stat-label">Total Jobs</p>
@@ -824,18 +855,24 @@
                         <p class="apple-stat-value text-2xl purple">${loadedJobsData.total_jobs > 0 ? (loadedJobsData.total_annotations / loadedJobsData.total_jobs).toFixed(1) : 0}</p>
                         <p class="apple-stat-label">Avg Ann/Job</p>
                     </div>
+                    <div class="apple-stat-card text-center">
+                        <p class="apple-stat-value text-2xl ${totalRejections > 0 ? 'text-red-600' : ''}">${totalRejections}</p>
+                        <p class="apple-stat-label">Total Rejections</p>
+                    </div>
                 </div>
 
-                <h3 class="apple-headline text-gray-900 mb-4">Annotations by Assignee</h3>
+                <h3 class="apple-headline text-gray-900 mb-4">Performance by Labeler</h3>
                 <div class="apple-card mb-6">
                     <table class="apple-table">
                         <thead>
                             <tr>
-                                <th>Assignee</th>
+                                <th>Labeler</th>
                                 <th class="text-right">Jobs</th>
                                 <th class="text-right">Frames</th>
                                 <th class="text-right">Annotations</th>
                                 <th class="text-right">Avg/Job</th>
+                                <th class="text-right">Rejections</th>
+                                <th class="text-right">Rejection Rate</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -843,6 +880,10 @@
 
             Object.entries(jobsByAssignee).forEach(([assignee, data]) => {
                 const avg = data.jobs > 0 ? (data.annotations / data.jobs).toFixed(1) : 0;
+                const rejectionData = rejectionsByAssignee[assignee] || { total_rejections: 0, unique_jobs_rejected: 0 };
+                const rejectionRate = data.jobs > 0 ? ((rejectionData.unique_jobs_rejected / data.jobs) * 100).toFixed(1) : 0;
+                const rejectionClass = rejectionData.total_rejections > 0 ? 'text-red-600 font-semibold' : 'text-gray-400';
+                const rateClass = parseFloat(rejectionRate) > 20 ? 'text-red-600 font-semibold' : (parseFloat(rejectionRate) > 10 ? 'text-yellow-600' : 'text-green-600');
                 html += `
                     <tr>
                         <td>${assignee}</td>
@@ -850,6 +891,8 @@
                         <td class="text-right">${data.frames}</td>
                         <td class="text-right font-semibold">${data.annotations}</td>
                         <td class="text-right">${avg}</td>
+                        <td class="text-right ${rejectionClass}">${rejectionData.total_rejections}</td>
+                        <td class="text-right ${rateClass}">${rejectionRate}%</td>
                     </tr>
                 `;
             });
@@ -975,8 +1018,7 @@
         html += '</div>';
 
         content.innerHTML = html;
-        modal.classList.remove('hidden');
-        document.body.style.overflow = 'hidden';
+        // Modal already shown at start with loading state
     }
 
     function closeReportModal() {
@@ -991,6 +1033,46 @@
             csv = 'Job ID,Assignee,Stage,State,Frames,Annotations\n';
             loadedJobsData.jobs.forEach(job => {
                 csv += `${job.id},"${job.assignee}",${job.stage},${job.state},${job.frame_count},${job.annotation_count}\n`;
+            });
+            csv += '\n';
+
+            // Add labeler summary with rejections
+            csv += 'Labeler Performance Summary\n';
+            csv += 'Labeler,Jobs,Frames,Annotations,Avg/Job,Rejections,Rejection Rate\n';
+
+            const jobsByAssignee = {};
+            loadedJobsData.jobs.forEach(job => {
+                const assignee = job.assignee || 'Unassigned';
+                if (!jobsByAssignee[assignee]) {
+                    jobsByAssignee[assignee] = { jobs: 0, annotations: 0, frames: 0 };
+                }
+                jobsByAssignee[assignee].jobs++;
+                jobsByAssignee[assignee].annotations += job.annotation_count;
+                jobsByAssignee[assignee].frames += job.frame_count;
+            });
+
+            const rejectionsByAssignee = {};
+            if (loadedRejectionsData && loadedRejectionsData.by_assignee) {
+                loadedRejectionsData.by_assignee.forEach(r => {
+                    rejectionsByAssignee[r.assignee] = r;
+                });
+            }
+
+            Object.entries(jobsByAssignee).forEach(([assignee, data]) => {
+                const avg = data.jobs > 0 ? (data.annotations / data.jobs).toFixed(1) : 0;
+                const rejectionData = rejectionsByAssignee[assignee] || { total_rejections: 0, unique_jobs_rejected: 0 };
+                const rejectionRate = data.jobs > 0 ? ((rejectionData.unique_jobs_rejected / data.jobs) * 100).toFixed(1) : 0;
+                csv += `"${assignee}",${data.jobs},${data.frames},${data.annotations},${avg},${rejectionData.total_rejections},${rejectionRate}%\n`;
+            });
+            csv += '\n';
+        }
+
+        // Add rejections summary if available
+        if (loadedRejectionsData && loadedRejectionsData.total_rejections > 0) {
+            csv += 'Rejection Summary\n';
+            csv += 'Labeler,Total Rejections,Unique Jobs Rejected\n';
+            loadedRejectionsData.by_assignee.forEach(r => {
+                csv += `"${r.assignee}",${r.total_rejections},${r.unique_jobs_rejected}\n`;
             });
             csv += '\n';
         }

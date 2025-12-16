@@ -7,6 +7,51 @@
     <p class="apple-subheadline text-gray-500 mt-2">Select a task to view its jobs</p>
 </div>
 
+{% if user.is_admin %}
+<!-- Loading indicator for pending sync check -->
+<div id="pending-sync-loading" class="apple-alert apple-alert-info mb-8">
+    <div class="apple-alert-icon">
+        <div class="sync-loader">
+            <div class="sync-loader-dot"></div>
+            <div class="sync-loader-dot"></div>
+            <div class="sync-loader-dot"></div>
+        </div>
+    </div>
+    <div class="apple-alert-content">
+        <p class="apple-body font-medium">Checking for completed jobs...</p>
+        <p class="apple-footnote text-gray-500 mt-1">Scanning tasks for jobs ready to sync</p>
+    </div>
+</div>
+
+<!-- Dynamic alert for pending sync jobs (admin only) -->
+<div id="pending-sync-alert" class="apple-alert apple-alert-warning mb-8" style="display: none;">
+    <div class="apple-alert-icon">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+        </svg>
+    </div>
+    <div class="apple-alert-content">
+        <p class="apple-body">
+            <span id="pending-sync-count" class="font-semibold">0</span> completed job(s) ready for queue sync
+        </p>
+        <p id="pending-sync-details" class="apple-footnote text-gray-500 mt-1"></p>
+    </div>
+    <div class="flex gap-2">
+        <button onclick="syncAllPending()" id="sync-all-btn" class="apple-btn apple-btn-sm apple-btn-primary" title="Sync All">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+            Sync All
+        </button>
+        <button onclick="refreshPendingCheck()" class="apple-btn apple-btn-sm apple-btn-ghost" title="Refresh">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+        </button>
+    </div>
+</div>
+{% endif %}
+
 {% if pending_count > 0 %}
 <div class="apple-alert apple-alert-info mb-8">
     <div class="apple-alert-icon">
@@ -38,6 +83,7 @@
                     <th>ID</th>
                     <th>Name</th>
                     <th>Status</th>
+                    <th>Progress</th>
                     <th>Size</th>
                     <th>Assignee</th>
                     <th class="text-right">Actions</th>
@@ -52,6 +98,15 @@
                         <span class="apple-badge apple-state-{{ task.status.lower().replace(' ', '_') }}">
                             {{ task.status }}
                         </span>
+                    </td>
+                    <td style="min-width: 140px;">
+                        <div class="apple-progress-container">
+                            <div class="apple-progress" style="flex: 1;">
+                                <div class="apple-progress-bar {% if task.progress_percent == 100 %}apple-progress-bar-green{% elif task.progress_percent >= 50 %}apple-progress-bar-blue{% else %}apple-progress-bar-yellow{% endif %}" style="width: {{ task.progress_percent }}%;"></div>
+                            </div>
+                            <span class="apple-progress-text">{{ task.progress_percent }}%</span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">{{ task.completed_jobs_count }}/{{ task.jobs_count }} jobs</div>
                     </td>
                     <td class="text-gray-500">{{ task.size }} frames</td>
                     <td class="text-gray-500">{{ task.assignee or '-' }}</td>
@@ -83,4 +138,324 @@
     </div>
     {% endif %}
 </div>
+
+{% if user.is_admin %}
+<script>
+    let pendingCheckInterval;
+    let pendingTasksData = [];
+    let isFirstCheck = true;
+
+    async function checkPendingSync(showLoading = false) {
+        const loadingEl = document.getElementById('pending-sync-loading');
+        const alertEl = document.getElementById('pending-sync-alert');
+        const countEl = document.getElementById('pending-sync-count');
+        const detailsEl = document.getElementById('pending-sync-details');
+
+        // Show loading indicator on first check or when explicitly requested
+        if (isFirstCheck || showLoading) {
+            loadingEl.style.display = 'flex';
+            alertEl.style.display = 'none';
+        }
+
+        try {
+            const response = await fetch('/api/pending-sync-check');
+            const data = await response.json();
+
+            pendingTasksData = data.pending_tasks || [];
+
+            // Hide loading indicator
+            loadingEl.style.display = 'none';
+            isFirstCheck = false;
+
+            if (data.total_pending > 0) {
+                countEl.textContent = data.total_pending;
+
+                // Build clickable task links
+                const detailsHtml = pendingTasksData.map(t =>
+                    `<a href="#" onclick="syncTask(${t.task_id}, '${t.task_name.replace(/'/g, "\\'")}'); return false;"
+                        class="sync-task-link" data-task-id="${t.task_id}">
+                        <span class="task-name">${t.task_name}</span>:
+                        <span class="job-count">${t.pending_count} job(s)</span>
+                    </a>`
+                ).join(' <span class="text-gray-300">•</span> ');
+                detailsEl.innerHTML = detailsHtml;
+
+                alertEl.style.display = 'flex';
+
+                // Add subtle pulse animation
+                alertEl.classList.add('animate-pulse-subtle');
+                setTimeout(() => alertEl.classList.remove('animate-pulse-subtle'), 1000);
+            } else {
+                alertEl.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Error checking pending sync:', error);
+            // Hide loading on error too
+            loadingEl.style.display = 'none';
+            isFirstCheck = false;
+        }
+    }
+
+    async function syncTask(taskId, taskName) {
+        const link = document.querySelector(`a[data-task-id="${taskId}"]`);
+        if (link) {
+            link.classList.add('syncing');
+            link.innerHTML = `<span class="task-name">${taskName}</span>: <span class="syncing-text">syncing...</span>`;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('task_id', taskId);
+
+            const response = await fetch('/sync-completed', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok || response.redirected) {
+                // Remove this task from the pending list
+                pendingTasksData = pendingTasksData.filter(t => t.task_id !== taskId);
+
+                // Re-check to update the display
+                await checkPendingSync();
+
+                // Show success feedback
+                showToast(`Synced jobs from "${taskName}" to queue`);
+            } else {
+                throw new Error('Sync failed');
+            }
+        } catch (error) {
+            console.error('Error syncing task:', error);
+            showToast(`Failed to sync "${taskName}"`, 'error');
+            // Restore the link
+            if (link) {
+                const task = pendingTasksData.find(t => t.task_id === taskId);
+                if (task) {
+                    link.classList.remove('syncing');
+                    link.innerHTML = `<span class="task-name">${taskName}</span>: <span class="job-count">${task.pending_count} job(s)</span>`;
+                }
+            }
+        }
+    }
+
+    async function syncAllPending() {
+        const btn = document.getElementById('sync-all-btn');
+        btn.disabled = true;
+        btn.innerHTML = `
+            <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            Syncing...
+        `;
+
+        let syncedCount = 0;
+        const tasksToSync = [...pendingTasksData];
+
+        for (const task of tasksToSync) {
+            try {
+                const formData = new FormData();
+                formData.append('task_id', task.task_id);
+
+                const response = await fetch('/sync-completed', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok || response.redirected) {
+                    syncedCount++;
+                }
+            } catch (error) {
+                console.error(`Error syncing task ${task.task_id}:`, error);
+            }
+        }
+
+        // Refresh the pending check
+        await checkPendingSync();
+
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+            Sync All
+        `;
+
+        if (syncedCount > 0) {
+            showToast(`Synced ${syncedCount} task(s) to queue`);
+        }
+    }
+
+    function showToast(message, type = 'success') {
+        // Remove existing toast
+        const existingToast = document.getElementById('sync-toast');
+        if (existingToast) existingToast.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'sync-toast';
+        toast.className = `sync-toast ${type === 'error' ? 'sync-toast-error' : 'sync-toast-success'}`;
+        toast.innerHTML = `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                ${type === 'error'
+                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>'
+                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>'
+                }
+            </svg>
+            <span>${message}</span>
+        `;
+        document.body.appendChild(toast);
+
+        // Animate in
+        setTimeout(() => toast.classList.add('show'), 10);
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    function refreshPendingCheck() {
+        const btn = event.currentTarget;
+        btn.disabled = true;
+        btn.querySelector('svg').classList.add('animate-spin');
+
+        checkPendingSync(true).finally(() => {
+            btn.disabled = false;
+            btn.querySelector('svg').classList.remove('animate-spin');
+        });
+    }
+
+    // Initial check after page load
+    document.addEventListener('DOMContentLoaded', () => {
+        // Check immediately
+        checkPendingSync();
+
+        // Then check every 30 seconds
+        pendingCheckInterval = setInterval(checkPendingSync, 30000);
+    });
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        if (pendingCheckInterval) {
+            clearInterval(pendingCheckInterval);
+        }
+    });
+</script>
+
+<style>
+    @keyframes pulse-subtle {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+    }
+    .animate-pulse-subtle {
+        animation: pulse-subtle 0.5s ease-in-out 2;
+    }
+    .animate-spin {
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* Loading dots animation */
+    .sync-loader {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 40px;
+        height: 40px;
+    }
+    .sync-loader-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #3B82F6;
+        animation: sync-loader-bounce 1.4s ease-in-out infinite both;
+    }
+    .sync-loader-dot:nth-child(1) {
+        animation-delay: -0.32s;
+    }
+    .sync-loader-dot:nth-child(2) {
+        animation-delay: -0.16s;
+    }
+    .sync-loader-dot:nth-child(3) {
+        animation-delay: 0s;
+    }
+    @keyframes sync-loader-bounce {
+        0%, 80%, 100% {
+            transform: scale(0.6);
+            opacity: 0.5;
+        }
+        40% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    /* Clickable task links in alert */
+    .sync-task-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: rgba(234, 88, 12, 0.1);
+        color: #C2410C;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+    .sync-task-link:hover {
+        background: rgba(234, 88, 12, 0.2);
+        transform: translateY(-1px);
+    }
+    .sync-task-link .task-name {
+        font-weight: 600;
+    }
+    .sync-task-link .job-count {
+        font-weight: 400;
+        opacity: 0.8;
+    }
+    .sync-task-link.syncing {
+        opacity: 0.6;
+        pointer-events: none;
+    }
+    .sync-task-link .syncing-text {
+        font-style: italic;
+    }
+
+    /* Toast notifications */
+    .sync-toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 20px;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+        z-index: 9999;
+        transform: translateY(100px);
+        opacity: 0;
+        transition: all 0.3s ease;
+    }
+    .sync-toast.show {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    .sync-toast-success {
+        background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
+        color: #166534;
+        border: 1px solid rgba(22, 163, 74, 0.2);
+    }
+    .sync-toast-error {
+        background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
+        color: #DC2626;
+        border: 1px solid rgba(220, 38, 38, 0.2);
+    }
+</style>
+{% endif %}
 {% endblock %}

@@ -27,6 +27,15 @@ class Task:
     status: str
     size: int
     assignee: Optional[str]
+    jobs_count: int = 0
+    completed_jobs_count: int = 0
+
+    @property
+    def progress_percent(self) -> int:
+        """Calculate completion percentage based on completed jobs."""
+        if self.jobs_count == 0:
+            return 0
+        return int((self.completed_jobs_count / self.jobs_count) * 100)
 
 
 class CVATClient:
@@ -77,8 +86,12 @@ class CVATClient:
         except httpx.RequestError as e:
             return False, f"Connection error: {str(e)}"
 
-    async def get_tasks(self) -> List[Task]:
-        """Fetch all tasks accessible to the user."""
+    async def get_tasks(self, include_jobs_progress: bool = False) -> List[Task]:
+        """Fetch all tasks accessible to the user.
+
+        Args:
+            include_jobs_progress: If True, fetch job counts for progress calculation.
+        """
         client = await self._get_client()
         tasks = []
         page = 1
@@ -91,18 +104,37 @@ class CVATClient:
             data = response.json()
             for t in data.get("results", []):
                 assignee = t.get("assignee")
+                jobs_count = 0
+                completed_jobs_count = 0
+
+                # CVAT includes jobs summary in task response
+                jobs_summary = t.get("jobs", {})
+                if isinstance(jobs_summary, dict):
+                    jobs_count = jobs_summary.get("count", 0)
+                    completed_jobs_count = jobs_summary.get("completed", 0)
+
                 tasks.append(Task(
                     id=t["id"],
                     name=t["name"],
                     project_id=t.get("project_id"),
                     status=t["status"],
                     size=t.get("size", 0),
-                    assignee=assignee.get("username") if assignee else None
+                    assignee=assignee.get("username") if assignee else None,
+                    jobs_count=jobs_count,
+                    completed_jobs_count=completed_jobs_count
                 ))
 
             if not data.get("next"):
                 break
             page += 1
+
+        # If jobs progress not in response and requested, fetch separately
+        if include_jobs_progress:
+            for task in tasks:
+                if task.jobs_count == 0:
+                    jobs = await self.get_jobs(task.id)
+                    task.jobs_count = len(jobs)
+                    task.completed_jobs_count = sum(1 for j in jobs if j.state == "completed")
 
         return tasks
 
