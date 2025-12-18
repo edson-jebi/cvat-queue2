@@ -864,19 +864,15 @@ async def get_task_rejection_stats(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """API endpoint to fetch rejection statistics per assignee for a task."""
+    """API endpoint to fetch rejection statistics per assignee for a task.
+
+    Combines data from:
+    1. RejectedJobTracker - historical rejection records
+    2. QueuedJob - current jobs in queue with rejection_count > 0
+    """
     from collections import defaultdict
-    from sqlalchemy import func
 
     try:
-        # Get all rejection records for this task
-        result = await db.execute(
-            select(RejectedJobTracker, User.username)
-            .outerjoin(User, RejectedJobTracker.rejected_by == User.id)
-            .where(RejectedJobTracker.cvat_task_id == task_id)
-        )
-        rejections = result.all()
-
         # Get CVAT client to fetch job assignees
         client = CVATClient(user.cvat_host, user.cvat_token)
         jobs = await client.get_jobs(task_id)
@@ -885,23 +881,54 @@ async def get_task_rejection_stats(
         # Build job_id -> assignee mapping
         job_assignees = {job.id: job.assignee or "Unassigned" for job in jobs}
 
-        # Aggregate rejections by assignee (the person whose work was rejected)
-        assignee_stats = defaultdict(lambda: {"rejections": 0, "jobs_rejected": set()})
+        # Track rejections by assignee and job
+        # Structure: {assignee: {job_id: rejection_count}}
+        assignee_job_rejections = defaultdict(lambda: defaultdict(int))
 
-        for tracker, rejected_by_username in rejections:
+        # 1. Get rejection records from RejectedJobTracker (historical)
+        result = await db.execute(
+            select(RejectedJobTracker)
+            .where(RejectedJobTracker.cvat_task_id == task_id)
+        )
+        trackers = result.scalars().all()
+
+        for tracker in trackers:
             assignee = job_assignees.get(tracker.cvat_job_id, "Unknown")
-            assignee_stats[assignee]["rejections"] += 1
-            assignee_stats[assignee]["jobs_rejected"].add(tracker.cvat_job_id)
+            # Use the tracker's rejection_count as it represents the cumulative count at that point
+            assignee_job_rejections[assignee][tracker.cvat_job_id] = max(
+                assignee_job_rejections[assignee][tracker.cvat_job_id],
+                tracker.rejection_count
+            )
 
-        # Convert to list format
-        stats_list = [
-            {
+        # 2. Get current jobs in queue with rejection_count > 0
+        result = await db.execute(
+            select(QueuedJob)
+            .where(QueuedJob.cvat_task_id == task_id)
+            .where(QueuedJob.rejection_count > 0)
+        )
+        queued_jobs = result.scalars().all()
+
+        for qjob in queued_jobs:
+            assignee = job_assignees.get(qjob.cvat_job_id, "Unknown")
+            # Take the max between tracker and queue (they might have different counts)
+            assignee_job_rejections[assignee][qjob.cvat_job_id] = max(
+                assignee_job_rejections[assignee][qjob.cvat_job_id],
+                qjob.rejection_count
+            )
+
+        # Aggregate stats by assignee
+        stats_list = []
+        for assignee, job_rejections in assignee_job_rejections.items():
+            total = sum(job_rejections.values())
+            unique_jobs = len(job_rejections)
+            stats_list.append({
                 "assignee": assignee,
-                "total_rejections": data["rejections"],
-                "unique_jobs_rejected": len(data["jobs_rejected"])
-            }
-            for assignee, data in sorted(assignee_stats.items(), key=lambda x: x[1]["rejections"], reverse=True)
-        ]
+                "total_rejections": total,
+                "unique_jobs_rejected": unique_jobs
+            })
+
+        # Sort by total rejections descending
+        stats_list.sort(key=lambda x: x["total_rejections"], reverse=True)
 
         total_rejections = sum(s["total_rejections"] for s in stats_list)
 
