@@ -211,6 +211,145 @@ async def view_queue(
     })
 
 
+@router.get("/labelers", response_class=HTMLResponse)
+async def view_labelers(
+    request: Request,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """View labeler statistics with task breakdown."""
+    from collections import defaultdict
+    from datetime import date
+
+    # Get all users to identify admins
+    result = await db.execute(select(User).order_by(User.username))
+    all_users = result.scalars().all()
+    admin_usernames = {u.username for u in all_users if u.is_admin}
+
+    # Get all jobs for stats (both current queue and history)
+    result = await db.execute(
+        select(QueuedJob).where(
+            QueuedJob.cvat_host == user.cvat_host,
+            QueuedJob.completed_by_username.isnot(None)
+        )
+    )
+    all_jobs = result.scalars().all()
+
+    today = date.today()
+
+    # Build labeler stats with task breakdown
+    labeler_data = defaultdict(lambda: {
+        "total": 0,
+        "pending": 0,
+        "in_review": 0,
+        "validated": 0,
+        "rejected_jobs": 0,
+        "today_completed": 0,
+        "today_validated": 0,
+        "today_rejected": 0,
+        "total_rejections": 0,
+        "tasks": defaultdict(lambda: {"pending": 0, "in_review": 0, "validated": 0, "rejected": 0, "total": 0})
+    })
+
+    for job in all_jobs:
+        username = job.completed_by_username
+        if username and username not in admin_usernames:
+            data = labeler_data[username]
+            task_key = job.task_name or f"Task {job.cvat_task_id}"
+
+            data["total"] += 1
+            data["tasks"][task_key]["total"] += 1
+
+            # Add rejection_count from job (cumulative rejections for this job)
+            if job.rejection_count:
+                data["total_rejections"] += job.rejection_count
+
+            if job.completed_at and job.completed_at.date() == today:
+                data["today_completed"] += 1
+
+            if job.status == QueueStatus.PENDING:
+                data["pending"] += 1
+                data["tasks"][task_key]["pending"] += 1
+            elif job.status == QueueStatus.IN_REVIEW:
+                data["in_review"] += 1
+                data["tasks"][task_key]["in_review"] += 1
+            elif job.status == QueueStatus.VALIDATED:
+                data["validated"] += 1
+                data["tasks"][task_key]["validated"] += 1
+                if job.validated_at and job.validated_at.date() == today:
+                    data["today_validated"] += 1
+            elif job.status == QueueStatus.REJECTED:
+                data["rejected_jobs"] += 1
+                data["tasks"][task_key]["rejected"] += 1
+                if job.validated_at and job.validated_at.date() == today:
+                    data["today_rejected"] += 1
+
+    # Convert to list with task breakdown and calculate approval rate
+    labeler_stats_list = []
+    for username, data in labeler_data.items():
+        waiting_review = data["pending"] + data["in_review"]
+
+        # Convert tasks to sorted list (by pending count desc)
+        tasks_list = [
+            {"name": task_name, **task_stats}
+            for task_name, task_stats in sorted(
+                data["tasks"].items(),
+                key=lambda x: (x[1]["pending"] + x[1]["in_review"], x[1]["total"]),
+                reverse=True
+            )
+        ]
+        # Only include tasks with pending jobs for the expandable section
+        pending_tasks = [t for t in tasks_list if t["pending"] > 0 or t["in_review"] > 0]
+
+        # Calculate approval rate (validated / (validated + total_rejections))
+        total_decisions = data["validated"] + data["total_rejections"]
+        approval_rate = (data["validated"] / total_decisions * 100) if total_decisions > 0 else 100.0
+
+        labeler_stats_list.append({
+            "username": username,
+            "waiting_review": waiting_review,
+            "has_many_pending": waiting_review >= 3,
+            "total": data["total"],
+            "pending": data["pending"],
+            "in_review": data["in_review"],
+            "validated": data["validated"],
+            "rejected_jobs": data["rejected_jobs"],
+            "total_rejections": data["total_rejections"],
+            "approval_rate": approval_rate,
+            "today_completed": data["today_completed"],
+            "today_validated": data["today_validated"],
+            "today_rejected": data["today_rejected"],
+            "pending_tasks": pending_tasks,
+            "all_tasks": tasks_list
+        })
+
+    # Sort by waiting_review descending
+    labeler_stats_list.sort(key=lambda x: (x["waiting_review"], x["total"]), reverse=True)
+
+    # Calculate summary stats
+    total_validated = sum(l["validated"] for l in labeler_stats_list)
+    total_rejections = sum(l["total_rejections"] for l in labeler_stats_list)
+    avg_approval_rate = (total_validated / (total_validated + total_rejections) * 100) if (total_validated + total_rejections) > 0 else 100.0
+
+    # Unread notifications
+    result = await db.execute(
+        select(Notification).where(Notification.user_id == user.id, Notification.is_read == False)
+    )
+    unread_notifications = len(result.scalars().all())
+
+    return templates.TemplateResponse("labelers.html", {
+        "request": request,
+        "user": user,
+        "labeler_stats": labeler_stats_list,
+        "total_labelers": len(labeler_stats_list),
+        "total_pending": sum(l["waiting_review"] for l in labeler_stats_list),
+        "total_validated": total_validated,
+        "total_rejections": total_rejections,
+        "avg_approval_rate": avg_approval_rate,
+        "unread_notifications": unread_notifications
+    })
+
+
 @router.post("/queue/{queue_id}/take")
 async def take_job(
     queue_id: int,

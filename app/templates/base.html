@@ -17,6 +17,7 @@
                 <div class="apple-nav-links hidden md:flex">
                     <a href="/dashboard" class="apple-nav-link {% if request.path == '/dashboard' %}active{% endif %}">Tasks</a>
                     <a href="/queue" class="apple-nav-link {% if request.path == '/queue' %}active{% endif %}">Queue</a>
+                    <a href="/labelers" class="apple-nav-link {% if request.path == '/labelers' %}active{% endif %}">Labelers</a>
                     <a href="/history" class="apple-nav-link {% if request.path == '/history' %}active{% endif %}">History</a>
                     {% if user.is_admin %}
                     <a href="/admin/queue" class="apple-nav-link {% if request.path == '/admin/queue' %}active{% endif %}">Assign</a>

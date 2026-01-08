@@ -1,0 +1,639 @@
+{% extends "base.html" %}
+{% block title %}Labeler Statistics - CVAT Queue{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="apple-title-2 text-gray-900">Labeler Statistics</h1>
+    <p class="apple-subheadline text-gray-500 mt-2">Job completion statistics by labeler (excludes reviewers/admins)</p>
+</div>
+
+<!-- Summary Stats -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Labelers</p>
+        <p class="apple-stat-value primary">{{ total_labelers }}</p>
+    </div>
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Waiting Review</p>
+        <p class="apple-stat-value warning">{{ total_pending }}</p>
+    </div>
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Total Approved</p>
+        <p class="apple-stat-value success">{{ total_validated }}</p>
+    </div>
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Total Rejections</p>
+        <p class="apple-stat-value danger">{{ total_rejections }}</p>
+    </div>
+    <div class="apple-stat-card">
+        <p class="apple-stat-label">Avg Approval Rate</p>
+        <p class="apple-stat-value {% if avg_approval_rate >= 80 %}success{% elif avg_approval_rate >= 50 %}warning{% else %}danger{% endif %}">{{ "%.1f"|format(avg_approval_rate) }}%</p>
+    </div>
+</div>
+
+<!-- Elegant Filters -->
+<div class="filter-bar mb-6">
+    <div class="filter-label">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+        </svg>
+        <span>Filter & Sort</span>
+    </div>
+    <div class="filter-chips">
+        <button type="button" class="filter-chip active" data-filter="all" onclick="filterLabelers('all')">
+            All Labelers
+        </button>
+        <button type="button" class="filter-chip" data-filter="approved-today" onclick="filterLabelers('approved-today')">
+            <span class="chip-dot success"></span>
+            Approved Today
+        </button>
+        <button type="button" class="filter-chip" data-filter="pending" onclick="filterLabelers('pending')">
+            <span class="chip-dot warning"></span>
+            Has Pending
+        </button>
+        <button type="button" class="filter-chip" data-filter="high-approval" onclick="filterLabelers('high-approval')">
+            <span class="chip-dot success"></span>
+            High Approval (80%+)
+        </button>
+        <button type="button" class="filter-chip" data-filter="low-approval" onclick="filterLabelers('low-approval')">
+            <span class="chip-dot danger"></span>
+            Needs Attention (&lt;80%)
+        </button>
+    </div>
+    <div class="filter-sort">
+        <select id="sort-select" class="sort-select" onchange="sortLabelers(this.value)">
+            <option value="pending-desc">Pending (High to Low)</option>
+            <option value="today-validated-desc">Approved Today (High to Low)</option>
+            <option value="total-desc">Total Jobs (High to Low)</option>
+            <option value="approval-desc">Approval Rate (High to Low)</option>
+            <option value="approval-asc">Approval Rate (Low to High)</option>
+            <option value="rejections-desc">Rejections (High to Low)</option>
+            <option value="name-asc">Name (A-Z)</option>
+        </select>
+    </div>
+</div>
+
+{% if labeler_stats and labeler_stats|length > 0 %}
+<div id="labelers-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for labeler in labeler_stats %}
+    <div class="labeler-card {% if labeler.has_many_pending %}has-pending{% endif %}"
+         data-pending="{{ labeler.waiting_review }}"
+         data-total="{{ labeler.total }}"
+         data-approval="{{ labeler.approval_rate }}"
+         data-rejections="{{ labeler.total_rejections }}"
+         data-today-validated="{{ labeler.today_validated }}"
+         data-name="{{ labeler.username|lower }}">
+        <!-- Header with avatar and name -->
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-12 h-12 rounded-full bg-gradient-to-br {% if labeler.has_many_pending %}from-orange-500 to-red-600{% elif labeler.approval_rate >= 80 %}from-emerald-500 to-teal-600{% else %}from-gray-400 to-gray-500{% endif %} flex items-center justify-center text-white font-semibold text-base shadow-md">
+                {{ labeler.username[0]|upper }}{{ labeler.username[1]|upper if labeler.username|length > 1 else '' }}
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="font-semibold text-gray-900 text-lg truncate">{{ labeler.username }}</p>
+                <div class="flex items-center gap-2">
+                    {% if labeler.has_many_pending %}
+                    <span class="status-pill warning">{{ labeler.waiting_review }} pending</span>
+                    {% endif %}
+                    <span class="status-pill {% if labeler.approval_rate >= 80 %}success{% elif labeler.approval_rate >= 50 %}warning{% else %}danger{% endif %}">
+                        {{ "%.0f"|format(labeler.approval_rate) }}% approval
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending/Waiting highlight -->
+        {% if labeler.waiting_review > 0 %}
+        <div class="pending-section mb-4">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium {% if labeler.has_many_pending %}text-orange-700{% else %}text-yellow-700{% endif %}">Waiting for Review</span>
+                <span class="text-2xl font-bold {% if labeler.has_many_pending %}text-orange-600{% else %}text-yellow-600{% endif %}">{{ labeler.waiting_review }}</span>
+            </div>
+            <div class="flex gap-3 text-xs">
+                <span class="text-gray-600">Pending: <strong>{{ labeler.pending }}</strong></span>
+                <span class="text-gray-600">In Review: <strong>{{ labeler.in_review }}</strong></span>
+            </div>
+
+            <!-- Toggleable Task Breakdown -->
+            {% if labeler.pending_tasks|length > 0 %}
+            <div class="mt-3">
+                <button type="button"
+                        onclick="toggleTasks('tasks-{{ loop.index }}')"
+                        class="task-toggle-btn w-full">
+                    <span class="text-xs font-medium text-gray-600">View by Task ({{ labeler.pending_tasks|length }})</span>
+                    <svg class="w-4 h-4 text-gray-400 transition-transform" id="icon-tasks-{{ loop.index }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+                <div id="tasks-{{ loop.index }}" class="task-breakdown hidden mt-2">
+                    {% for task in labeler.pending_tasks %}
+                    <div class="task-item">
+                        <span class="task-name truncate" title="{{ task.name }}">{{ task.name }}</span>
+                        <div class="task-counts">
+                            {% if task.pending > 0 %}
+                            <span class="count-pending">{{ task.pending }}p</span>
+                            {% endif %}
+                            {% if task.in_review > 0 %}
+                            <span class="count-review">{{ task.in_review }}r</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Today's stats -->
+        <div class="today-section mb-4">
+            <p class="apple-caption text-gray-400 mb-2 font-medium">Today</p>
+            <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="stat-box">
+                    <p class="text-lg font-semibold text-blue-600">{{ labeler.today_completed }}</p>
+                    <p class="apple-caption text-gray-400">Submitted</p>
+                </div>
+                <div class="stat-box">
+                    <p class="text-lg font-semibold text-green-600">{{ labeler.today_validated }}</p>
+                    <p class="apple-caption text-gray-400">Approved</p>
+                </div>
+                <div class="stat-box">
+                    <p class="text-lg font-semibold text-red-500">{{ labeler.today_rejected }}</p>
+                    <p class="apple-caption text-gray-400">Rejected</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Total stats -->
+        <div class="total-section pt-4 border-t border-gray-100">
+            <p class="apple-caption text-gray-400 mb-2 font-medium">All Time</p>
+            <div class="grid grid-cols-3 gap-3 text-center mb-3">
+                <div class="stat-box">
+                    <p class="text-lg font-semibold text-gray-700">{{ labeler.total }}</p>
+                    <p class="apple-caption text-gray-400">Total Jobs</p>
+                </div>
+                <div class="stat-box">
+                    <p class="text-lg font-semibold text-green-600">{{ labeler.validated }}</p>
+                    <p class="apple-caption text-gray-400">Approved</p>
+                </div>
+                <div class="stat-box">
+                    <p class="text-lg font-semibold text-red-500">{{ labeler.total_rejections }}</p>
+                    <p class="apple-caption text-gray-400">Rejections</p>
+                </div>
+            </div>
+
+            <!-- Approval Rate Bar -->
+            <div class="approval-bar-container">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs text-gray-500">Approval Rate</span>
+                    <span class="text-sm font-semibold {% if labeler.approval_rate >= 80 %}text-green-600{% elif labeler.approval_rate >= 50 %}text-yellow-600{% else %}text-red-500{% endif %}">
+                        {{ "%.1f"|format(labeler.approval_rate) }}%
+                    </span>
+                </div>
+                <div class="approval-bar">
+                    <div class="approval-bar-fill {% if labeler.approval_rate >= 80 %}bg-green-500{% elif labeler.approval_rate >= 50 %}bg-yellow-500{% else %}bg-red-500{% endif %}"
+                         style="width: {{ labeler.approval_rate }}%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- No results message -->
+<div id="no-results" class="apple-card hidden">
+    <div class="apple-empty-state">
+        <div class="apple-empty-icon">
+            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+        </div>
+        <h3 class="apple-empty-heading">No Matches</h3>
+        <p class="apple-empty-text">No labelers match the current filter criteria.</p>
+    </div>
+</div>
+{% else %}
+<div class="apple-card">
+    <div class="apple-empty-state">
+        <div class="apple-empty-icon">
+            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+            </svg>
+        </div>
+        <h3 class="apple-empty-heading">No Labelers Yet</h3>
+        <p class="apple-empty-text">No labelers have submitted jobs for validation yet.</p>
+    </div>
+</div>
+{% endif %}
+
+<script>
+let currentFilter = 'all';
+let currentSort = 'pending-desc';
+
+function toggleTasks(id) {
+    const element = document.getElementById(id);
+    const icon = document.getElementById('icon-' + id);
+
+    if (element.classList.contains('hidden')) {
+        element.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+    } else {
+        element.classList.add('hidden');
+        icon.style.transform = 'rotate(0deg)';
+    }
+}
+
+function filterLabelers(filter) {
+    currentFilter = filter;
+
+    // Update active chip
+    document.querySelectorAll('.filter-chip').forEach(chip => {
+        chip.classList.remove('active');
+        if (chip.dataset.filter === filter) {
+            chip.classList.add('active');
+        }
+    });
+
+    applyFiltersAndSort();
+}
+
+function sortLabelers(sort) {
+    currentSort = sort;
+    applyFiltersAndSort();
+}
+
+function applyFiltersAndSort() {
+    const grid = document.getElementById('labelers-grid');
+    const noResults = document.getElementById('no-results');
+    if (!grid) return;
+
+    const cards = Array.from(grid.querySelectorAll('.labeler-card'));
+    let visibleCount = 0;
+
+    // Apply filter
+    cards.forEach(card => {
+        const pending = parseInt(card.dataset.pending) || 0;
+        const approval = parseFloat(card.dataset.approval) || 0;
+        const todayValidated = parseInt(card.dataset.todayValidated) || 0;
+
+        let show = true;
+        switch (currentFilter) {
+            case 'approved-today':
+                show = todayValidated > 0;
+                break;
+            case 'pending':
+                show = pending > 0;
+                break;
+            case 'high-approval':
+                show = approval >= 80;
+                break;
+            case 'low-approval':
+                show = approval < 80;
+                break;
+            default:
+                show = true;
+        }
+
+        if (show) {
+            card.classList.remove('hidden');
+            visibleCount++;
+        } else {
+            card.classList.add('hidden');
+        }
+    });
+
+    // Show/hide no results message
+    if (noResults) {
+        if (visibleCount === 0) {
+            noResults.classList.remove('hidden');
+        } else {
+            noResults.classList.add('hidden');
+        }
+    }
+
+    // Apply sort
+    const visibleCards = cards.filter(c => !c.classList.contains('hidden'));
+    visibleCards.sort((a, b) => {
+        const aVal = getSortValue(a, currentSort);
+        const bVal = getSortValue(b, currentSort);
+
+        if (currentSort.endsWith('-asc')) {
+            return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+        } else {
+            return bVal > aVal ? 1 : bVal < aVal ? -1 : 0;
+        }
+    });
+
+    // Re-order cards in DOM
+    visibleCards.forEach(card => grid.appendChild(card));
+    cards.filter(c => c.classList.contains('hidden')).forEach(card => grid.appendChild(card));
+}
+
+function getSortValue(card, sort) {
+    switch (sort) {
+        case 'pending-desc':
+            return parseInt(card.dataset.pending) || 0;
+        case 'today-validated-desc':
+            return parseInt(card.dataset.todayValidated) || 0;
+        case 'total-desc':
+            return parseInt(card.dataset.total) || 0;
+        case 'approval-desc':
+        case 'approval-asc':
+            return parseFloat(card.dataset.approval) || 0;
+        case 'rejections-desc':
+            return parseInt(card.dataset.rejections) || 0;
+        case 'name-asc':
+            return card.dataset.name || '';
+        default:
+            return 0;
+    }
+}
+</script>
+
+<style>
+    /* Filter bar */
+    .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        border-radius: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .filter-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .filter-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        flex: 1;
+    }
+
+    .filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.5rem 1rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: #6b7280;
+        background: #f3f4f6;
+        border: 1px solid transparent;
+        border-radius: 100px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .filter-chip:hover {
+        background: #e5e7eb;
+        color: #374151;
+    }
+
+    .filter-chip.active {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+    }
+
+    .chip-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    .chip-dot.success { background: #22c55e; }
+    .chip-dot.warning { background: #f59e0b; }
+    .chip-dot.danger { background: #ef4444; }
+
+    .filter-sort {
+        flex-shrink: 0;
+    }
+
+    .sort-select {
+        padding: 0.5rem 2rem 0.5rem 1rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: #374151;
+        background: #f3f4f6 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E") right 0.75rem center no-repeat;
+        background-size: 1rem;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        cursor: pointer;
+        appearance: none;
+        transition: all 0.2s;
+    }
+
+    .sort-select:hover {
+        border-color: #d1d5db;
+        background-color: #e5e7eb;
+    }
+
+    .sort-select:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    /* Status pills */
+    .status-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.125rem 0.5rem;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        border-radius: 100px;
+    }
+
+    .status-pill.success {
+        color: #15803d;
+        background: rgba(34, 197, 94, 0.15);
+    }
+
+    .status-pill.warning {
+        color: #b45309;
+        background: rgba(245, 158, 11, 0.15);
+    }
+
+    .status-pill.danger {
+        color: #dc2626;
+        background: rgba(239, 68, 68, 0.15);
+    }
+
+    /* Labeler cards */
+    .labeler-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        border-radius: 16px;
+        padding: 1.25rem;
+        transition: all 0.2s ease;
+    }
+
+    .labeler-card:hover {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        transform: translateY(-2px);
+    }
+
+    .labeler-card.hidden {
+        display: none;
+    }
+
+    /* Highlighted cards for labelers with many pending jobs */
+    .labeler-card.has-pending {
+        background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+        border: 2px solid #f97316;
+        box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15);
+    }
+
+    .labeler-card.has-pending:hover {
+        box-shadow: 0 8px 24px rgba(249, 115, 22, 0.2);
+    }
+
+    /* Pending section */
+    .pending-section {
+        background: rgba(251, 191, 36, 0.1);
+        border-radius: 12px;
+        padding: 0.875rem;
+    }
+
+    .labeler-card.has-pending .pending-section {
+        background: rgba(249, 115, 22, 0.12);
+    }
+
+    /* Today section */
+    .today-section {
+        background: rgba(59, 130, 246, 0.05);
+        border-radius: 12px;
+        padding: 0.75rem;
+    }
+
+    /* Stat boxes */
+    .stat-box {
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 8px;
+        padding: 0.5rem;
+    }
+
+    /* Approval bar */
+    .approval-bar-container {
+        margin-top: 0.5rem;
+    }
+
+    .approval-bar {
+        height: 6px;
+        background: #e5e7eb;
+        border-radius: 100px;
+        overflow: hidden;
+    }
+
+    .approval-bar-fill {
+        height: 100%;
+        border-radius: 100px;
+        transition: width 0.5s ease;
+    }
+
+    /* Task toggle button */
+    .task-toggle-btn {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0.75rem;
+        background: rgba(255, 255, 255, 0.5);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .task-toggle-btn:hover {
+        background: rgba(255, 255, 255, 0.8);
+        border-color: rgba(0, 0, 0, 0.1);
+    }
+
+    /* Task breakdown list */
+    .task-breakdown {
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 8px;
+        padding: 0.5rem;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .task-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.375rem 0.5rem;
+        border-radius: 6px;
+    }
+
+    .task-item:hover {
+        background: rgba(0, 0, 0, 0.03);
+    }
+
+    .task-name {
+        font-size: 0.75rem;
+        color: #374151;
+        flex: 1;
+        min-width: 0;
+        margin-right: 0.5rem;
+    }
+
+    .task-counts {
+        display: flex;
+        gap: 0.375rem;
+        flex-shrink: 0;
+    }
+
+    .count-pending {
+        font-size: 0.625rem;
+        font-weight: 600;
+        color: #ca8a04;
+        background: rgba(251, 191, 36, 0.2);
+        padding: 0.125rem 0.375rem;
+        border-radius: 4px;
+    }
+
+    .count-review {
+        font-size: 0.625rem;
+        font-weight: 600;
+        color: #2563eb;
+        background: rgba(59, 130, 246, 0.15);
+        padding: 0.125rem 0.375rem;
+        border-radius: 4px;
+    }
+
+    /* Stat value colors */
+    .apple-stat-value.success { color: #22c55e; }
+    .apple-stat-value.danger { color: #ef4444; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .filter-bar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .filter-chips {
+            justify-content: flex-start;
+        }
+
+        .filter-sort {
+            width: 100%;
+        }
+
+        .sort-select {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
