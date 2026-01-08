@@ -66,13 +66,65 @@ async def dashboard(request: Request, user: User = Depends(require_user), db: As
     )
     unread_count = len(result.scalars().all())
 
+    # Get task activity stats from queue (top tasks by activity)
+    from collections import defaultdict
+    result = await db.execute(
+        select(QueuedJob).where(QueuedJob.cvat_host == user.cvat_host)
+    )
+    all_queue_jobs = result.scalars().all()
+
+    # Aggregate stats per task
+    task_activity = defaultdict(lambda: {
+        "task_id": 0,
+        "task_name": "",
+        "total_jobs": 0,
+        "pending": 0,
+        "in_review": 0,
+        "validated": 0,
+        "rejected": 0,
+        "total_rejections": 0
+    })
+
+    for job in all_queue_jobs:
+        task_key = job.cvat_task_id
+        task_activity[task_key]["task_id"] = job.cvat_task_id
+        task_activity[task_key]["task_name"] = job.task_name or f"Task {job.cvat_task_id}"
+        task_activity[task_key]["total_jobs"] += 1
+
+        if job.rejection_count:
+            task_activity[task_key]["total_rejections"] += job.rejection_count
+
+        if job.status == QueueStatus.PENDING:
+            task_activity[task_key]["pending"] += 1
+        elif job.status == QueueStatus.IN_REVIEW:
+            task_activity[task_key]["in_review"] += 1
+        elif job.status == QueueStatus.VALIDATED:
+            task_activity[task_key]["validated"] += 1
+        elif job.status == QueueStatus.REJECTED:
+            task_activity[task_key]["rejected"] += 1
+
+    # Create lookup for task frame counts from CVAT tasks
+    task_frames = {task.id: task.size for task in tasks}
+
+    # Convert to list and sort by total activity (total_jobs + total_rejections)
+    top_tasks_list = sorted(
+        task_activity.values(),
+        key=lambda x: (x["total_jobs"] + x["total_rejections"], x["pending"] + x["in_review"]),
+        reverse=True
+    )[:15]  # Top 15 tasks
+
+    # Add frame count to each task
+    for task in top_tasks_list:
+        task["frames"] = task_frames.get(task["task_id"], 0)
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user,
         "tasks": tasks,
         "pending_count": len(pending_jobs),
         "my_assigned_count": len(my_assigned_jobs),
-        "unread_notifications": unread_count
+        "unread_notifications": unread_count,
+        "top_tasks": top_tasks_list
     })
 
 

@@ -70,74 +70,294 @@
 </div>
 {% endif %}
 
+<!-- Queue Activity by Task (shown first) -->
+{% if top_tasks %}
 <div class="apple-card">
     <div class="apple-card-header">
-        <h2>Your Tasks</h2>
+        <div class="flex items-center justify-between w-full">
+            <div class="flex items-center gap-3">
+                <h2>Queue Activity by Task</h2>
+                <span class="apple-badge apple-badge-info">Top {{ top_tasks|length }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <label for="task-limit" class="text-sm text-gray-500">Show:</label>
+                <select id="task-limit" class="apple-select text-sm" style="width: auto; padding: 4px 24px 4px 10px;" onchange="filterTopTasks()">
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="15" selected>15</option>
+                    <option value="all">All</option>
+                </select>
+            </div>
+        </div>
     </div>
 
-    {% if tasks %}
     <div class="apple-table-container">
-        <table class="apple-table">
+        <table class="apple-table" id="top-tasks-table">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Status</th>
-                    <th>Progress</th>
-                    <th>Size</th>
-                    <th>Assignee</th>
-                    <th class="text-right">Actions</th>
+                    <th>Task</th>
+                    <th class="text-center">Frames</th>
+                    <th class="text-center">Total Jobs</th>
+                    <th class="text-center">
+                        <span class="inline-flex items-center gap-1">
+                            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                            Pending
+                        </span>
+                    </th>
+                    <th class="text-center">
+                        <span class="inline-flex items-center gap-1">
+                            <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                            In Review
+                        </span>
+                    </th>
+                    <th class="text-center">
+                        <span class="inline-flex items-center gap-1">
+                            <span class="w-2 h-2 rounded-full bg-green-400"></span>
+                            Validated
+                        </span>
+                    </th>
+                    <th class="text-center">
+                        <span class="inline-flex items-center gap-1">
+                            <span class="w-2 h-2 rounded-full bg-red-400"></span>
+                            Rejected
+                        </span>
+                    </th>
+                    <th class="text-center">Rejections</th>
+                    <th class="text-right">Progress</th>
                 </tr>
             </thead>
             <tbody>
-                {% for task in tasks %}
-                <tr>
-                    <td class="font-mono text-gray-500">{{ task.id }}</td>
-                    <td class="font-medium">{{ task.name }}</td>
+                {% for task in top_tasks %}
+                <tr class="top-task-row" data-index="{{ loop.index }}">
                     <td>
-                        <span class="apple-badge apple-state-{{ task.status.lower().replace(' ', '_') }}">
-                            {{ task.status }}
-                        </span>
-                    </td>
-                    <td style="min-width: 140px;">
-                        <div class="apple-progress-container">
-                            <div class="apple-progress" style="flex: 1;">
-                                <div class="apple-progress-bar {% if task.progress_percent == 100 %}apple-progress-bar-green{% elif task.progress_percent >= 50 %}apple-progress-bar-blue{% else %}apple-progress-bar-yellow{% endif %}" style="width: {{ task.progress_percent }}%;"></div>
-                            </div>
-                            <span class="apple-progress-text">{{ task.progress_percent }}%</span>
-                        </div>
-                        <div class="text-xs text-gray-400 mt-1">{{ task.completed_jobs_count }}/{{ task.jobs_count }} jobs</div>
-                    </td>
-                    <td class="text-gray-500">{{ task.size }} frames</td>
-                    <td class="text-gray-500">{{ task.assignee or '-' }}</td>
-                    <td class="text-right">
-                        <a href="/task/{{ task.id }}" class="apple-btn apple-btn-ghost apple-btn-sm">
-                            View Jobs
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                            </svg>
+                        <a href="/task/{{ task.task_id }}" class="font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                            {{ task.task_name }}
                         </a>
+                        <span class="text-xs text-gray-400 ml-1">#{{ task.task_id }}</span>
+                    </td>
+                    <td class="text-center">
+                        {% if task.frames > 0 %}
+                        <span class="text-gray-600">{{ "{:,}".format(task.frames) }}</span>
+                        {% else %}
+                        <span class="text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center font-semibold">{{ task.total_jobs }}</td>
+                    <td class="text-center">
+                        {% if task.pending > 0 %}
+                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                            {{ task.pending }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if task.in_review > 0 %}
+                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                            {{ task.in_review }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if task.validated > 0 %}
+                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                            {{ task.validated }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if task.rejected > 0 %}
+                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                            {{ task.rejected }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if task.total_rejections > 0 %}
+                        <span class="inline-flex items-center gap-1 text-red-600 font-medium">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            {{ task.total_rejections }}
+                        </span>
+                        {% else %}
+                        <span class="text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-right" style="min-width: 120px;">
+                        {% set completed = task.validated + task.rejected %}
+                        {% set progress = (completed / task.total_jobs * 100) if task.total_jobs > 0 else 0 %}
+                        <div class="flex items-center justify-end gap-2">
+                            <div class="apple-progress" style="width: 60px; height: 6px;">
+                                <div class="apple-progress-bar {% if progress == 100 %}apple-progress-bar-green{% elif progress >= 50 %}apple-progress-bar-blue{% else %}apple-progress-bar-yellow{% endif %}" style="width: {{ progress }}%;"></div>
+                            </div>
+                            <span class="text-xs text-gray-500 w-10 text-right">{{ progress|round|int }}%</span>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    {% else %}
-    <div class="apple-empty-state">
-        <div class="apple-empty-icon">
-            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-            </svg>
+
+    <div class="p-4 border-t border-gray-100 bg-gray-50/50">
+        <div class="flex items-center justify-between text-sm text-gray-500">
+            <span>
+                Showing <span id="visible-count">{{ top_tasks|length }}</span> of {{ top_tasks|length }} tasks with queue activity
+            </span>
+            <span class="text-xs">
+                Sorted by total activity (jobs + rejections)
+            </span>
         </div>
-        <h3 class="apple-empty-heading">No Tasks Found</h3>
-        <p class="apple-empty-text">
-            Tasks will appear here once you have access in CVAT.<br>
-            Contact your administrator if you need access.
-        </p>
     </div>
-    {% endif %}
 </div>
+
+<script>
+function filterTopTasks() {
+    const limit = document.getElementById('task-limit').value;
+    const rows = document.querySelectorAll('.top-task-row');
+    let visibleCount = 0;
+
+    rows.forEach((row, index) => {
+        if (limit === 'all' || index < parseInt(limit)) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    document.getElementById('visible-count').textContent = visibleCount;
+}
+</script>
+{% endif %}
+
+<!-- Collapsible Your Tasks Section -->
+<div class="apple-card mt-8">
+    <div class="apple-card-header cursor-pointer select-none" onclick="toggleYourTasks()" id="your-tasks-header">
+        <div class="flex items-center justify-between w-full">
+            <div class="flex items-center gap-3">
+                <h2>Your Tasks</h2>
+                {% if tasks %}
+                <span class="apple-badge apple-badge-secondary">{{ tasks|length }}</span>
+                {% endif %}
+            </div>
+            <button type="button" class="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+                <span id="your-tasks-toggle-text">Show</span>
+                <svg id="your-tasks-chevron" class="w-5 h-5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div id="your-tasks-content" class="hidden">
+        {% if tasks %}
+        <div class="apple-table-container">
+            <table class="apple-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Progress</th>
+                        <th>Size</th>
+                        <th>Assignee</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                    <tr>
+                        <td class="font-mono text-gray-500">{{ task.id }}</td>
+                        <td class="font-medium">{{ task.name }}</td>
+                        <td>
+                            <span class="apple-badge apple-state-{{ task.status.lower().replace(' ', '_') }}">
+                                {{ task.status }}
+                            </span>
+                        </td>
+                        <td style="min-width: 140px;">
+                            <div class="apple-progress-container">
+                                <div class="apple-progress" style="flex: 1;">
+                                    <div class="apple-progress-bar {% if task.progress_percent == 100 %}apple-progress-bar-green{% elif task.progress_percent >= 50 %}apple-progress-bar-blue{% else %}apple-progress-bar-yellow{% endif %}" style="width: {{ task.progress_percent }}%;"></div>
+                                </div>
+                                <span class="apple-progress-text">{{ task.progress_percent }}%</span>
+                            </div>
+                            <div class="text-xs text-gray-400 mt-1">{{ task.completed_jobs_count }}/{{ task.jobs_count }} jobs</div>
+                        </td>
+                        <td class="text-gray-500">{{ task.size }} frames</td>
+                        <td class="text-gray-500">{{ task.assignee or '-' }}</td>
+                        <td class="text-right">
+                            <a href="/task/{{ task.id }}" class="apple-btn apple-btn-ghost apple-btn-sm">
+                                View Jobs
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                </svg>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="apple-empty-state">
+            <div class="apple-empty-icon">
+                <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+            </div>
+            <h3 class="apple-empty-heading">No Tasks Found</h3>
+            <p class="apple-empty-text">
+                Tasks will appear here once you have access in CVAT.<br>
+                Contact your administrator if you need access.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function toggleYourTasks() {
+    const content = document.getElementById('your-tasks-content');
+    const chevron = document.getElementById('your-tasks-chevron');
+    const toggleText = document.getElementById('your-tasks-toggle-text');
+
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        chevron.style.transform = 'rotate(180deg)';
+        toggleText.textContent = 'Hide';
+        localStorage.setItem('yourTasksExpanded', 'true');
+    } else {
+        content.classList.add('hidden');
+        chevron.style.transform = 'rotate(0deg)';
+        toggleText.textContent = 'Show';
+        localStorage.setItem('yourTasksExpanded', 'false');
+    }
+}
+
+// Restore state from localStorage
+document.addEventListener('DOMContentLoaded', function() {
+    const expanded = localStorage.getItem('yourTasksExpanded');
+    if (expanded === 'true') {
+        const content = document.getElementById('your-tasks-content');
+        const chevron = document.getElementById('your-tasks-chevron');
+        const toggleText = document.getElementById('your-tasks-toggle-text');
+        if (content) {
+            content.classList.remove('hidden');
+            chevron.style.transform = 'rotate(180deg)';
+            toggleText.textContent = 'Hide';
+        }
+    }
+});
+</script>
 
 {% if user.is_admin %}
 <script>
