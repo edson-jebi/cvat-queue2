@@ -7,6 +7,14 @@ from dataclasses import dataclass
 
 
 @dataclass
+class Project:
+    """Represents a CVAT project."""
+    id: int
+    name: str
+    tasks_count: int = 0
+
+
+@dataclass
 class Job:
     """Represents a CVAT job."""
     id: int
@@ -137,6 +145,40 @@ class CVATClient:
                     task.completed_jobs_count = sum(1 for j in jobs if j.state == "completed")
 
         return tasks
+
+    async def get_projects(self) -> List[Project]:
+        """Fetch all projects accessible to the user."""
+        client = await self._get_client()
+        projects = []
+        page = 1
+
+        while True:
+            response = await client.get(f"/api/projects", params={"page": page})
+            if response.status_code != 200:
+                break
+
+            data = response.json()
+            for p in data.get("results", []):
+                # Get tasks count from the response
+                tasks_count = 0
+                if "tasks" in p:
+                    tasks_info = p["tasks"]
+                    if isinstance(tasks_info, dict):
+                        tasks_count = tasks_info.get("count", 0)
+                    elif isinstance(tasks_info, list):
+                        tasks_count = len(tasks_info)
+
+                projects.append(Project(
+                    id=p["id"],
+                    name=p["name"],
+                    tasks_count=tasks_count
+                ))
+
+            if not data.get("next"):
+                break
+            page += 1
+
+        return projects
 
     async def get_jobs(self, task_id: int) -> List[Job]:
         """Fetch all jobs for a specific task."""

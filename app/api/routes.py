@@ -37,10 +37,14 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, user: User = Depends(require_user), db: AsyncSession = Depends(get_db)):
     """Main dashboard showing tasks and queue."""
-    # Get CVAT tasks with jobs progress for completion percentage
+    # Get CVAT tasks and projects
     client = CVATClient(user.cvat_host, user.cvat_token)
     tasks = await client.get_tasks(include_jobs_progress=True)
+    projects = await client.get_projects()
     await client.close()
+
+    # Create project lookup
+    project_lookup = {p.id: p.name for p in projects}
 
     # Get pending queue count
     result = await db.execute(
@@ -103,8 +107,9 @@ async def dashboard(request: Request, user: User = Depends(require_user), db: As
         elif job.status == QueueStatus.REJECTED:
             task_activity[task_key]["rejected"] += 1
 
-    # Create lookup for task frame counts from CVAT tasks
+    # Create lookups for task info from CVAT tasks
     task_frames = {task.id: task.size for task in tasks}
+    task_project_ids = {task.id: task.project_id for task in tasks}
 
     # Convert to list and sort by total activity (total_jobs + total_rejections)
     top_tasks_list = sorted(
@@ -113,9 +118,32 @@ async def dashboard(request: Request, user: User = Depends(require_user), db: As
         reverse=True
     )[:15]  # Top 15 tasks
 
-    # Add frame count to each task
+    # Add frame count and project info to each task
     for task in top_tasks_list:
         task["frames"] = task_frames.get(task["task_id"], 0)
+        project_id = task_project_ids.get(task["task_id"])
+        task["project_id"] = project_id
+        task["project_name"] = project_lookup.get(project_id, "No Project") if project_id else "No Project"
+
+    # Build project summary for Sankey visualization
+    project_tasks = {}
+    for task in top_tasks_list:
+        proj_id = task["project_id"]
+        proj_name = task["project_name"]
+        if proj_name not in project_tasks:
+            project_tasks[proj_name] = {
+                "project_id": proj_id,
+                "project_name": proj_name,
+                "task_ids": [],
+                "total_jobs": 0,
+                "total_frames": 0
+            }
+        project_tasks[proj_name]["task_ids"].append(task["task_id"])
+        project_tasks[proj_name]["total_jobs"] += task["total_jobs"]
+        project_tasks[proj_name]["total_frames"] += task["frames"]
+
+    # Sort projects by total jobs
+    projects_summary = sorted(project_tasks.values(), key=lambda x: x["total_jobs"], reverse=True)
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
@@ -124,7 +152,8 @@ async def dashboard(request: Request, user: User = Depends(require_user), db: As
         "pending_count": len(pending_jobs),
         "my_assigned_count": len(my_assigned_jobs),
         "unread_notifications": unread_count,
-        "top_tasks": top_tasks_list
+        "top_tasks": top_tasks_list,
+        "projects_summary": projects_summary
     })
 
 

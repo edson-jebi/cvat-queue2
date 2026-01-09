@@ -70,7 +70,7 @@
 </div>
 {% endif %}
 
-<!-- Queue Activity by Task (shown first) -->
+<!-- Queue Activity by Task with Project Sankey (shown first) -->
 {% if top_tasks %}
 <div class="apple-card">
     <div class="apple-card-header">
@@ -91,120 +91,148 @@
         </div>
     </div>
 
-    <div class="apple-table-container">
-        <table class="apple-table" id="top-tasks-table">
-            <thead>
-                <tr>
-                    <th>Task</th>
-                    <th class="text-center">Frames</th>
-                    <th class="text-center">Total Jobs</th>
-                    <th class="text-center">
-                        <span class="inline-flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                            Pending
-                        </span>
-                    </th>
-                    <th class="text-center">
-                        <span class="inline-flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-blue-400"></span>
-                            In Review
-                        </span>
-                    </th>
-                    <th class="text-center">
-                        <span class="inline-flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-green-400"></span>
-                            Validated
-                        </span>
-                    </th>
-                    <th class="text-center">
-                        <span class="inline-flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-red-400"></span>
-                            Rejected
-                        </span>
-                    </th>
-                    <th class="text-center">Rejections</th>
-                    <th class="text-right">Progress</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for task in top_tasks %}
-                <tr class="top-task-row" data-index="{{ loop.index }}">
-                    <td>
-                        <a href="/task/{{ task.task_id }}" class="font-medium text-blue-600 hover:text-blue-800 hover:underline">
-                            {{ task.task_name }}
-                        </a>
-                        <span class="text-xs text-gray-400 ml-1">#{{ task.task_id }}</span>
-                    </td>
-                    <td class="text-center">
-                        {% if task.frames > 0 %}
-                        <span class="text-gray-600">{{ "{:,}".format(task.frames) }}</span>
-                        {% else %}
-                        <span class="text-gray-300">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-center font-semibold">{{ task.total_jobs }}</td>
-                    <td class="text-center">
-                        {% if task.pending > 0 %}
-                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                            {{ task.pending }}
-                        </span>
-                        {% else %}
-                        <span class="text-gray-300">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-center">
-                        {% if task.in_review > 0 %}
-                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-                            {{ task.in_review }}
-                        </span>
-                        {% else %}
-                        <span class="text-gray-300">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-center">
-                        {% if task.validated > 0 %}
-                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                            {{ task.validated }}
-                        </span>
-                        {% else %}
-                        <span class="text-gray-300">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-center">
-                        {% if task.rejected > 0 %}
-                        <span class="inline-flex items-center justify-center min-w-[24px] px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                            {{ task.rejected }}
-                        </span>
-                        {% else %}
-                        <span class="text-gray-300">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-center">
-                        {% if task.total_rejections > 0 %}
-                        <span class="inline-flex items-center gap-1 text-red-600 font-medium">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                            </svg>
-                            {{ task.total_rejections }}
-                        </span>
-                        {% else %}
-                        <span class="text-gray-300">-</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-right" style="min-width: 120px;">
-                        {% set completed = task.validated + task.rejected %}
-                        {% set progress = (completed / task.total_jobs * 100) if task.total_jobs > 0 else 0 %}
-                        <div class="flex items-center justify-end gap-2">
-                            <div class="apple-progress" style="width: 60px; height: 6px;">
-                                <div class="apple-progress-bar {% if progress == 100 %}apple-progress-bar-green{% elif progress >= 50 %}apple-progress-bar-blue{% else %}apple-progress-bar-yellow{% endif %}" style="width: {{ progress }}%;"></div>
-                            </div>
-                            <span class="text-xs text-gray-500 w-10 text-right">{{ progress|round|int }}%</span>
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="sankey-container">
+        <!-- Projects Column (Left) -->
+        <div class="sankey-projects">
+            <div class="sankey-column-header">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+                </svg>
+                Projects
+            </div>
+            {% for project in projects_summary %}
+            <div class="sankey-project-node"
+                 data-project="{{ project.project_name }}"
+                 data-task-ids="{{ project.task_ids|join(',') }}"
+                 onmouseenter="highlightProject('{{ project.project_name }}')"
+                 onmouseleave="clearHighlight()">
+                <div class="sankey-node-content">
+                    <span class="sankey-node-name truncate">{{ project.project_name }}</span>
+                    <div class="sankey-node-stats">
+                        <span class="sankey-stat">{{ project.task_ids|length }} tasks</span>
+                        <span class="sankey-stat">{{ project.total_jobs }} jobs</span>
+                    </div>
+                </div>
+                <div class="sankey-node-bar" style="--bar-width: {{ (project.total_jobs / (projects_summary|map(attribute='total_jobs')|max or 1) * 100)|int }}%"></div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Connection Lines (SVG) -->
+        <div class="sankey-connections" id="sankey-svg-container">
+            <svg id="sankey-lines" width="100%" height="100%" preserveAspectRatio="none"></svg>
+        </div>
+
+        <!-- Tasks Table (Right) -->
+        <div class="sankey-tasks">
+            <div class="apple-table-container" style="border: none; border-radius: 0;">
+                <table class="apple-table" id="top-tasks-table">
+                    <thead>
+                        <tr>
+                            <th>Task</th>
+                            <th class="text-center">Frames</th>
+                            <th class="text-center">Jobs</th>
+                            <th class="text-center">
+                                <span class="inline-flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                    Pend
+                                </span>
+                            </th>
+                            <th class="text-center">
+                                <span class="inline-flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                                    Rev
+                                </span>
+                            </th>
+                            <th class="text-center">
+                                <span class="inline-flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-green-400"></span>
+                                    Val
+                                </span>
+                            </th>
+                            <th class="text-center">
+                                <span class="inline-flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-red-400"></span>
+                                    Rej
+                                </span>
+                            </th>
+                            <th class="text-right">Progress</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for task in top_tasks %}
+                        <tr class="top-task-row"
+                            data-index="{{ loop.index }}"
+                            data-task-id="{{ task.task_id }}"
+                            data-project="{{ task.project_name }}"
+                            onmouseenter="highlightTask({{ task.task_id }}, '{{ task.project_name }}')"
+                            onmouseleave="clearHighlight()">
+                            <td>
+                                <a href="/task/{{ task.task_id }}" class="font-medium text-blue-600 hover:text-blue-800 hover:underline">
+                                    {{ task.task_name }}
+                                </a>
+                                <span class="text-xs text-gray-400 ml-1">#{{ task.task_id }}</span>
+                            </td>
+                            <td class="text-center">
+                                {% if task.frames > 0 %}
+                                <span class="text-gray-600 text-sm">{{ "{:,}".format(task.frames) }}</span>
+                                {% else %}
+                                <span class="text-gray-300">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center font-semibold">{{ task.total_jobs }}</td>
+                            <td class="text-center">
+                                {% if task.pending > 0 %}
+                                <span class="inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                                    {{ task.pending }}
+                                </span>
+                                {% else %}
+                                <span class="text-gray-300">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if task.in_review > 0 %}
+                                <span class="inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                                    {{ task.in_review }}
+                                </span>
+                                {% else %}
+                                <span class="text-gray-300">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if task.validated > 0 %}
+                                <span class="inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                    {{ task.validated }}
+                                </span>
+                                {% else %}
+                                <span class="text-gray-300">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if task.rejected > 0 %}
+                                <span class="inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                    {{ task.rejected }}
+                                </span>
+                                {% else %}
+                                <span class="text-gray-300">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-right" style="min-width: 100px;">
+                                {% set completed = task.validated + task.rejected %}
+                                {% set progress = (completed / task.total_jobs * 100) if task.total_jobs > 0 else 0 %}
+                                <div class="flex items-center justify-end gap-2">
+                                    <div class="apple-progress" style="width: 50px; height: 5px;">
+                                        <div class="apple-progress-bar {% if progress == 100 %}apple-progress-bar-green{% elif progress >= 50 %}apple-progress-bar-blue{% else %}apple-progress-bar-yellow{% endif %}" style="width: {{ progress }}%;"></div>
+                                    </div>
+                                    <span class="text-xs text-gray-500 w-8 text-right">{{ progress|round|int }}%</span>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <div class="p-4 border-t border-gray-100 bg-gray-50/50">
@@ -213,13 +241,284 @@
                 Showing <span id="visible-count">{{ top_tasks|length }}</span> of {{ top_tasks|length }} tasks with queue activity
             </span>
             <span class="text-xs">
-                Sorted by total activity (jobs + rejections)
+                Hover over projects or tasks to see connections
             </span>
         </div>
     </div>
 </div>
 
+<style>
+.sankey-container {
+    display: flex;
+    min-height: 400px;
+    overflow: hidden;
+}
+
+.sankey-projects {
+    width: 220px;
+    flex-shrink: 0;
+    padding: 1rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.sankey-column-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 0.5rem;
+}
+
+.sankey-project-node {
+    position: relative;
+    padding: 0.75rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    overflow: hidden;
+}
+
+.sankey-project-node:hover,
+.sankey-project-node.highlighted {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    transform: translateX(4px);
+}
+
+.sankey-project-node.dimmed {
+    opacity: 0.4;
+}
+
+.sankey-node-content {
+    position: relative;
+    z-index: 1;
+}
+
+.sankey-node-name {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 0.25rem;
+}
+
+.sankey-node-stats {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.sankey-stat {
+    font-size: 0.6875rem;
+    color: #64748b;
+}
+
+.sankey-node-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    width: var(--bar-width, 0%);
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    border-radius: 0 3px 0 0;
+}
+
+.sankey-connections {
+    width: 60px;
+    flex-shrink: 0;
+    position: relative;
+}
+
+#sankey-lines {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.sankey-line {
+    fill: none;
+    stroke: #cbd5e1;
+    stroke-width: 2;
+    opacity: 0.5;
+    transition: all 0.2s ease;
+}
+
+.sankey-line.highlighted {
+    stroke: #3b82f6;
+    stroke-width: 3;
+    opacity: 1;
+}
+
+.sankey-line.dimmed {
+    opacity: 0.1;
+}
+
+.sankey-tasks {
+    flex: 1;
+    overflow-x: auto;
+}
+
+.sankey-tasks .apple-table-container {
+    border-radius: 0;
+}
+
+.top-task-row {
+    transition: all 0.2s ease;
+}
+
+.top-task-row.highlighted {
+    background: rgba(59, 130, 246, 0.08) !important;
+}
+
+.top-task-row.dimmed {
+    opacity: 0.4;
+}
+
+.top-task-row.highlighted td:first-child {
+    position: relative;
+}
+
+.top-task-row.highlighted td:first-child::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #3b82f6;
+}
+</style>
+
 <script>
+// Draw initial connection lines
+function drawSankeyLines() {
+    const svg = document.getElementById('sankey-lines');
+    if (!svg) return;
+
+    const container = document.getElementById('sankey-svg-container');
+    const projects = document.querySelectorAll('.sankey-project-node');
+    const tasks = document.querySelectorAll('.top-task-row');
+
+    svg.innerHTML = '';
+
+    const containerRect = container.getBoundingClientRect();
+
+    projects.forEach(project => {
+        const projectName = project.dataset.project;
+        const taskIds = project.dataset.taskIds.split(',').map(id => id.trim());
+        const projectRect = project.getBoundingClientRect();
+
+        taskIds.forEach(taskId => {
+            const taskRow = document.querySelector(`.top-task-row[data-task-id="${taskId}"]`);
+            if (taskRow && taskRow.style.display !== 'none') {
+                const taskRect = taskRow.getBoundingClientRect();
+
+                const x1 = 0;
+                const y1 = projectRect.top + projectRect.height / 2 - containerRect.top;
+                const x2 = 60;
+                const y2 = taskRect.top + taskRect.height / 2 - containerRect.top;
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                const midX = 30;
+                path.setAttribute('d', `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`);
+                path.setAttribute('class', 'sankey-line');
+                path.setAttribute('data-project', projectName);
+                path.setAttribute('data-task-id', taskId);
+                svg.appendChild(path);
+            }
+        });
+    });
+}
+
+function highlightProject(projectName) {
+    // Highlight project node
+    document.querySelectorAll('.sankey-project-node').forEach(node => {
+        if (node.dataset.project === projectName) {
+            node.classList.add('highlighted');
+            node.classList.remove('dimmed');
+        } else {
+            node.classList.add('dimmed');
+            node.classList.remove('highlighted');
+        }
+    });
+
+    // Highlight related tasks
+    document.querySelectorAll('.top-task-row').forEach(row => {
+        if (row.dataset.project === projectName && row.style.display !== 'none') {
+            row.classList.add('highlighted');
+            row.classList.remove('dimmed');
+        } else {
+            row.classList.add('dimmed');
+            row.classList.remove('highlighted');
+        }
+    });
+
+    // Highlight connection lines
+    document.querySelectorAll('.sankey-line').forEach(line => {
+        if (line.dataset.project === projectName) {
+            line.classList.add('highlighted');
+            line.classList.remove('dimmed');
+        } else {
+            line.classList.add('dimmed');
+            line.classList.remove('highlighted');
+        }
+    });
+}
+
+function highlightTask(taskId, projectName) {
+    // Highlight task row
+    document.querySelectorAll('.top-task-row').forEach(row => {
+        if (row.dataset.taskId == taskId) {
+            row.classList.add('highlighted');
+            row.classList.remove('dimmed');
+        } else {
+            row.classList.add('dimmed');
+            row.classList.remove('highlighted');
+        }
+    });
+
+    // Highlight parent project
+    document.querySelectorAll('.sankey-project-node').forEach(node => {
+        if (node.dataset.project === projectName) {
+            node.classList.add('highlighted');
+            node.classList.remove('dimmed');
+        } else {
+            node.classList.add('dimmed');
+            node.classList.remove('highlighted');
+        }
+    });
+
+    // Highlight connection line
+    document.querySelectorAll('.sankey-line').forEach(line => {
+        if (line.dataset.taskId == taskId) {
+            line.classList.add('highlighted');
+            line.classList.remove('dimmed');
+        } else {
+            line.classList.add('dimmed');
+            line.classList.remove('highlighted');
+        }
+    });
+}
+
+function clearHighlight() {
+    document.querySelectorAll('.sankey-project-node, .top-task-row, .sankey-line').forEach(el => {
+        el.classList.remove('highlighted', 'dimmed');
+    });
+}
+
 function filterTopTasks() {
     const limit = document.getElementById('task-limit').value;
     const rows = document.querySelectorAll('.top-task-row');
@@ -235,7 +534,21 @@ function filterTopTasks() {
     });
 
     document.getElementById('visible-count').textContent = visibleCount;
+
+    // Redraw Sankey lines after filtering
+    setTimeout(drawSankeyLines, 50);
 }
+
+// Initialize Sankey lines on load
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(drawSankeyLines, 100);
+});
+
+// Redraw on window resize
+window.addEventListener('resize', function() {
+    clearTimeout(window.sankeyResizeTimeout);
+    window.sankeyResizeTimeout = setTimeout(drawSankeyLines, 100);
+});
 </script>
 {% endif %}
 
