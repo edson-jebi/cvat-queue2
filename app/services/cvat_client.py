@@ -37,6 +37,7 @@ class Task:
     assignee: Optional[str]
     jobs_count: int = 0
     completed_jobs_count: int = 0
+    created_date: Optional[str] = None
 
     @property
     def progress_percent(self) -> int:
@@ -129,7 +130,8 @@ class CVATClient:
                     size=t.get("size", 0),
                     assignee=assignee.get("username") if assignee else None,
                     jobs_count=jobs_count,
-                    completed_jobs_count=completed_jobs_count
+                    completed_jobs_count=completed_jobs_count,
+                    created_date=t.get("created_date")
                 ))
 
             if not data.get("next"):

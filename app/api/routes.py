@@ -110,13 +110,31 @@ async def dashboard(request: Request, user: User = Depends(require_user), db: As
     # Create lookups for task info from CVAT tasks
     task_frames = {task.id: task.size for task in tasks}
     task_project_ids = {task.id: task.project_id for task in tasks}
+    task_created_dates = {task.id: task.created_date for task in tasks}
 
-    # Convert to list and sort by total activity (total_jobs + total_rejections)
+    # Include ALL CVAT tasks (even those without queue activity)
+    for cvat_task in tasks:
+        if cvat_task.id not in task_activity:
+            task_activity[cvat_task.id] = {
+                "task_id": cvat_task.id,
+                "task_name": cvat_task.name,
+                "total_jobs": 0,
+                "pending": 0,
+                "in_review": 0,
+                "validated": 0,
+                "rejected": 0,
+                "total_rejections": 0
+            }
+        # Add created_date to all tasks
+        task_activity[cvat_task.id]["created_date"] = cvat_task.created_date
+
+    # Convert to list and sort by created date (newest first)
+    # Send all tasks - filtering is done on the frontend
     top_tasks_list = sorted(
         task_activity.values(),
-        key=lambda x: (x["total_jobs"] + x["total_rejections"], x["pending"] + x["in_review"]),
+        key=lambda x: x.get("created_date") or "",
         reverse=True
-    )[:15]  # Top 15 tasks
+    )
 
     # Add frame count and project info to each task
     for task in top_tasks_list:
@@ -1470,3 +1488,135 @@ async def check_pending_sync(
     except Exception as e:
         await client.close()
         return JSONResponse({"error": str(e), "pending_tasks": [], "total_pending": 0})
+
+
+@router.get("/api/project/{project_name}/analytics")
+async def get_project_analytics(
+    project_name: str,
+    task_ids: str,  # Comma-separated task IDs
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get job analytics with label statistics for all tasks in a project.
+    Creates/refreshes snapshots for each task and returns jobs grouped by top labels.
+    """
+    from collections import defaultdict
+    import json
+
+    try:
+        task_id_list = [int(tid.strip()) for tid in task_ids.split(',') if tid.strip()]
+
+        if not task_id_list:
+            return JSONResponse({"error": "No task IDs provided"}, status_code=400)
+
+        client = CVATClient(user.cvat_host, user.cvat_token)
+        analytics = AnalyticsService(db)
+
+        # Get task info
+        tasks = await client.get_tasks()
+        task_lookup = {t.id: t for t in tasks}
+
+        project_data = {
+            "project_name": project_name,
+            "tasks": [],
+            "label_summary": defaultdict(int),
+            "jobs_by_label": defaultdict(list),
+            "total_frames": 0,
+            "validated_frames": 0
+        }
+
+        for task_id in task_id_list:
+            task = task_lookup.get(task_id)
+            if not task:
+                continue
+
+            # Capture fresh label snapshot
+            await analytics.capture_label_snapshot(client, task_id, task.name)
+
+            # Get jobs with their annotations
+            jobs = await client.get_jobs(task_id)
+            task_jobs_data = []
+
+            for job in jobs:
+                # Get label statistics for each job
+                label_stats = await client.get_job_labels_statistics(job.id)
+
+                # Sort labels by count descending
+                sorted_labels = sorted(label_stats.items(), key=lambda x: x[1], reverse=True)
+                top_labels = sorted_labels[:5]  # Top 5 labels
+
+                job_data = {
+                    "job_id": job.id,
+                    "task_id": task_id,
+                    "task_name": task.name,
+                    "assignee": job.assignee or "Unassigned",
+                    "stage": job.stage,
+                    "state": job.state,
+                    "frame_count": job.frame_count,
+                    "total_annotations": sum(label_stats.values()),
+                    "top_labels": [{"name": name, "count": count} for name, count in top_labels],
+                    "all_labels": label_stats
+                }
+                task_jobs_data.append(job_data)
+
+                # Track frame counts
+                project_data["total_frames"] += job.frame_count
+                # Validated jobs are in "acceptance" stage with "completed" state
+                if job.stage == "acceptance" and job.state == "completed":
+                    project_data["validated_frames"] += job.frame_count
+
+                # Aggregate label counts
+                for label_name, count in label_stats.items():
+                    project_data["label_summary"][label_name] += count
+                    # Group jobs by their dominant label
+                    if sorted_labels:
+                        dominant_label = sorted_labels[0][0]
+                        if job.id not in [j["job_id"] for j in project_data["jobs_by_label"][dominant_label]]:
+                            project_data["jobs_by_label"][dominant_label].append(job_data)
+
+            project_data["tasks"].append({
+                "task_id": task_id,
+                "task_name": task.name,
+                "jobs_count": len(task_jobs_data),
+                "jobs": task_jobs_data
+            })
+
+        await client.close()
+
+        # Sort label summary by count
+        sorted_summary = sorted(project_data["label_summary"].items(), key=lambda x: x[1], reverse=True)
+
+        # Build tree structure: labels -> jobs
+        label_tree = []
+        for label_name, total_count in sorted_summary[:10]:  # Top 10 labels
+            jobs_with_label = project_data["jobs_by_label"].get(label_name, [])
+            # Sort jobs by this label's count
+            jobs_sorted = sorted(
+                jobs_with_label,
+                key=lambda j: j["all_labels"].get(label_name, 0),
+                reverse=True
+            )
+            label_tree.append({
+                "label_name": label_name,
+                "total_count": total_count,
+                "jobs_count": len(jobs_sorted),
+                "jobs": jobs_sorted[:10]  # Top 10 jobs for this label
+            })
+
+        return JSONResponse({
+            "project_name": project_name,
+            "tasks_count": len(project_data["tasks"]),
+            "total_jobs": sum(t["jobs_count"] for t in project_data["tasks"]),
+            "total_annotations": sum(dict(sorted_summary).values()),
+            "total_frames": project_data["total_frames"],
+            "validated_frames": project_data["validated_frames"],
+            "label_tree": label_tree,
+            "tasks": project_data["tasks"]
+        })
+
+    except Exception as e:
+        print(f"Error in get_project_analytics: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
