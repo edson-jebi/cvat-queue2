@@ -389,6 +389,69 @@ async def view_labelers(
     )
     unread_notifications = len(result.scalars().all())
 
+    # Build reviewer stats (admin only) - who validated/rejected jobs
+    reviewer_stats_list = []
+    if user.is_admin:
+        # Get all jobs that have been reviewed (validated_by is set)
+        result = await db.execute(
+            select(QueuedJob).where(
+                QueuedJob.cvat_host == user.cvat_host,
+                QueuedJob.validated_by.isnot(None)
+            )
+        )
+        reviewed_jobs = result.scalars().all()
+
+        # Create user lookup for reviewer names
+        user_lookup = {u.id: u for u in all_users}
+
+        # Aggregate stats per reviewer
+        reviewer_data = defaultdict(lambda: {
+            "total_reviews": 0,
+            "validated": 0,
+            "rejected": 0,
+            "today_reviews": 0,
+            "today_validated": 0,
+            "today_rejected": 0,
+            "is_admin": False
+        })
+
+        for job in reviewed_jobs:
+            reviewer_id = job.validated_by
+            if reviewer_id and reviewer_id in user_lookup:
+                reviewer = user_lookup[reviewer_id]
+                data = reviewer_data[reviewer.username]
+                data["is_admin"] = reviewer.is_admin
+                data["total_reviews"] += 1
+
+                if job.status == QueueStatus.VALIDATED:
+                    data["validated"] += 1
+                    if job.validated_at and job.validated_at.date() == today:
+                        data["today_validated"] += 1
+                        data["today_reviews"] += 1
+                elif job.status == QueueStatus.REJECTED:
+                    data["rejected"] += 1
+                    if job.validated_at and job.validated_at.date() == today:
+                        data["today_rejected"] += 1
+                        data["today_reviews"] += 1
+
+        # Convert to list
+        for username, data in reviewer_data.items():
+            approval_rate = (data["validated"] / data["total_reviews"] * 100) if data["total_reviews"] > 0 else 0
+            reviewer_stats_list.append({
+                "username": username,
+                "is_admin": data["is_admin"],
+                "total_reviews": data["total_reviews"],
+                "validated": data["validated"],
+                "rejected": data["rejected"],
+                "approval_rate": approval_rate,
+                "today_reviews": data["today_reviews"],
+                "today_validated": data["today_validated"],
+                "today_rejected": data["today_rejected"]
+            })
+
+        # Sort by total reviews descending
+        reviewer_stats_list.sort(key=lambda x: x["total_reviews"], reverse=True)
+
     return templates.TemplateResponse("labelers.html", {
         "request": request,
         "user": user,
@@ -398,7 +461,8 @@ async def view_labelers(
         "total_validated": total_validated,
         "total_rejections": total_rejections,
         "avg_approval_rate": avg_approval_rate,
-        "unread_notifications": unread_notifications
+        "unread_notifications": unread_notifications,
+        "reviewer_stats": reviewer_stats_list
     })
 
 
