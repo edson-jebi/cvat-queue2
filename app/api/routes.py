@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import math
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Header
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -196,12 +197,20 @@ async def task_detail(
     for row in result:
         queued_ids.add(row[0])
 
+    # Check if all jobs are in validation stage and completed state
+    all_validation_completed = (
+        len(jobs) > 0 and
+        all(job.stage == "validation" and job.state == "completed" for job in jobs)
+    )
+
     return templates.TemplateResponse("task_detail.html", {
         "request": request,
         "user": user,
         "task": task,
         "jobs": jobs,
-        "queued_ids": queued_ids
+        "queued_ids": queued_ids,
+        "all_validation_completed": all_validation_completed,
+        "cvat_host": user.cvat_host
     })
 
 
@@ -1620,3 +1629,485 @@ async def get_project_analytics(
         import traceback
         traceback.print_exc()
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+def calculate_iou(box1: list, box2: list) -> float:
+    """
+    Calculate Intersection over Union (IoU) between two bounding boxes.
+    Boxes are in format [x1, y1, x2, y2] (top-left, bottom-right corners).
+    For CVAT rectangles, points are [x1, y1, x2, y2].
+    """
+    # Extract coordinates
+    x1_1, y1_1, x2_1, y2_1 = box1[0], box1[1], box1[2], box1[3]
+    x1_2, y1_2, x2_2, y2_2 = box2[0], box2[1], box2[2], box2[3]
+
+    # Calculate intersection
+    xi1 = max(x1_1, x1_2)
+    yi1 = max(y1_1, y1_2)
+    xi2 = min(x2_1, x2_2)
+    yi2 = min(y2_1, y2_2)
+
+    # Check if there's an intersection
+    if xi2 <= xi1 or yi2 <= yi1:
+        return 0.0
+
+    intersection = (xi2 - xi1) * (yi2 - yi1)
+
+    # Calculate union
+    area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+    area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+    union = area1 + area2 - intersection
+
+    if union <= 0:
+        return 0.0
+
+    return intersection / union
+
+
+def get_bbox_from_points(points: list, shape_type: str) -> list:
+    """
+    Convert CVAT shape points to bounding box [x1, y1, x2, y2].
+    For rectangles: points are already [x1, y1, x2, y2]
+    For polygons/polylines: calculate bounding box from all points
+    """
+    if not points:
+        return None
+
+    if shape_type == "rectangle":
+        # Rectangle points are [x1, y1, x2, y2]
+        if len(points) >= 4:
+            return [points[0], points[1], points[2], points[3]]
+    else:
+        # For polygons, polylines, etc.: points are [x1, y1, x2, y2, x3, y3, ...]
+        if len(points) >= 4:
+            x_coords = [points[i] for i in range(0, len(points), 2)]
+            y_coords = [points[i] for i in range(1, len(points), 2)]
+            return [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
+
+    return None
+
+
+def get_bbox_centroid(bbox: list) -> tuple:
+    """
+    Calculate the centroid (center point) of a bounding box.
+    bbox is [x1, y1, x2, y2]
+    Returns (center_x, center_y)
+    """
+    x1, y1, x2, y2 = bbox
+    center_x = (x1 + x2) / 2
+    center_y = (y1 + y2) / 2
+    return (center_x, center_y)
+
+
+def euclidean_distance(p1: tuple, p2: tuple) -> float:
+    """Calculate Euclidean distance between two points."""
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+
+
+def percentile(data: list, p: float) -> float:
+    """Calculate percentile of a sorted list."""
+    if not data:
+        return 0
+    k = (len(data) - 1) * (p / 100)
+    f = int(k)
+    c = f + 1 if f + 1 < len(data) else f
+    return data[f] + (data[c] - data[f]) * (k - f) if c != f else data[f]
+
+
+def outliers_by_dbscan(points: list, eps: float = 50, min_samples: int = 3) -> list:
+    """
+    DBSCAN clustering - pure Python implementation.
+    Points with label -1 are outliers (not in any cluster).
+
+    Args:
+        points: List of (x, y) tuples
+        eps: Maximum distance between points in the same cluster
+        min_samples: Minimum points to form a cluster
+
+    Returns:
+        List of boolean values, True if point is an outlier
+    """
+    n = len(points)
+    if n < min_samples:
+        return [False] * n
+
+    labels = [-1] * n  # -1 means unvisited/noise
+    cluster_id = 0
+
+    def region_query(point_idx):
+        """Find all points within eps distance."""
+        neighbors = []
+        for i in range(n):
+            if euclidean_distance(points[point_idx], points[i]) <= eps:
+                neighbors.append(i)
+        return neighbors
+
+    def expand_cluster(point_idx, neighbors, cluster_id):
+        """Expand cluster from a core point."""
+        labels[point_idx] = cluster_id
+        i = 0
+        while i < len(neighbors):
+            neighbor_idx = neighbors[i]
+            if labels[neighbor_idx] == -1:  # Was noise, now border point
+                labels[neighbor_idx] = cluster_id
+            elif labels[neighbor_idx] == -2:  # Unvisited
+                labels[neighbor_idx] = cluster_id
+                new_neighbors = region_query(neighbor_idx)
+                if len(new_neighbors) >= min_samples:
+                    neighbors.extend(new_neighbors)
+            i += 1
+
+    # Mark all as unvisited (-2), -1 will mean noise after processing
+    labels = [-2] * n
+
+    for i in range(n):
+        if labels[i] != -2:  # Already processed
+            continue
+
+        neighbors = region_query(i)
+        if len(neighbors) < min_samples:
+            labels[i] = -1  # Mark as noise
+        else:
+            expand_cluster(i, neighbors, cluster_id)
+            cluster_id += 1
+
+    # Return True for outliers (label == -1)
+    return [label == -1 for label in labels]
+
+
+def outliers_by_class_aware(boxes: list, points: list, min_class_size: int = 2, k: float = 2.5) -> list:
+    """
+    Class-aware outlier detection - detect outliers within each label class separately.
+    Points are only compared to others of the same class.
+
+    Args:
+        boxes: List of dicts with 'id', 'bbox', 'label_id' keys
+        points: List of (x, y) centroid tuples
+        min_class_size: Minimum points in a class to check for outliers
+        k: IQR multiplier for threshold
+
+    Returns:
+        List of boolean values, True if point is an outlier
+    """
+    n = len(points)
+    if n < 2:
+        return [False] * n
+
+    is_outlier = [False] * n
+
+    # Group indices by label_id (class)
+    classes = {}
+    for i, box in enumerate(boxes):
+        label_id = box.get("label_id", 0)
+        if label_id not in classes:
+            classes[label_id] = []
+        classes[label_id].append(i)
+
+    # Calculate global centroid for edge cases
+    global_centroid = (
+        sum(p[0] for p in points) / n,
+        sum(p[1] for p in points) / n
+    )
+
+    for label_id, indices in classes.items():
+        class_points = [points[i] for i in indices]
+        class_size = len(class_points)
+
+        # Skip classes with too few points
+        if class_size < min_class_size:
+            continue
+
+        # For classes with only 2 points, check if they're far apart
+        if class_size == 2:
+            dist = euclidean_distance(class_points[0], class_points[1])
+            # Normalize by image diagonal (assume ~1000px as reference)
+            normalized_dist = dist / 1000
+            if normalized_dist > 0.3:
+                # Flag the one farther from global centroid
+                dists_to_global = [euclidean_distance(p, global_centroid) for p in class_points]
+                outlier_local_idx = 0 if dists_to_global[0] > dists_to_global[1] else 1
+                is_outlier[indices[outlier_local_idx]] = True
+            continue
+
+        # For larger classes, use IQR within class
+        class_centroid = (
+            sum(p[0] for p in class_points) / class_size,
+            sum(p[1] for p in class_points) / class_size
+        )
+
+        distances = [euclidean_distance(p, class_centroid) for p in class_points]
+        sorted_distances = sorted(distances)
+
+        q1 = percentile(sorted_distances, 25)
+        q3 = percentile(sorted_distances, 75)
+        iqr = q3 - q1
+
+        # More lenient threshold for small classes
+        adaptive_k = k if class_size >= 10 else k + 0.5
+
+        # Minimum IQR floor
+        max_dist = max(distances) if distances else 0
+        min_iqr = 0.05 * max_dist if max_dist > 0 else 0.01
+        iqr = max(iqr, min_iqr)
+
+        threshold = q3 + adaptive_k * iqr
+
+        for local_idx, dist in enumerate(distances):
+            if dist > threshold:
+                is_outlier[indices[local_idx]] = True
+
+    return is_outlier
+
+
+def detect_centroid_outliers(boxes: list, min_votes: int = 2) -> list:
+    """
+    Consensus voting outlier detection combining DBSCAN and Class-aware methods.
+    Only flags as outlier if both methods agree (when min_votes=2).
+
+    Args:
+        boxes: List of dicts with 'id', 'bbox', 'label_id' keys
+        min_votes: Minimum number of methods that must agree (1 or 2)
+                   - 1: Either method flags it (union)
+                   - 2: Both methods must agree (intersection)
+
+    Returns:
+        List of box IDs that are outliers
+    """
+    # Need more boxes for meaningful consensus detection
+    if len(boxes) < 6:
+        return []
+
+    # Calculate centroids for all boxes
+    points = []
+    for box in boxes:
+        centroid = get_bbox_centroid(box["bbox"])
+        points.append(centroid)
+
+    # Method 1: DBSCAN (density-based clustering)
+    # eps is adaptive based on point spread - more generous to reduce false positives
+    if points:
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        spread = max(max(xs) - min(xs), max(ys) - min(ys))
+        # Use 30% of spread (more generous) with higher minimum
+        eps = max(spread * 0.30, 80)
+    else:
+        eps = 100
+
+    # Require more points to form a cluster (reduces noise flagging)
+    min_samples = max(3, len(points) // 4)  # At least 25% of points to form cluster
+    dbscan_outliers = outliers_by_dbscan(points, eps=eps, min_samples=min_samples)
+
+    # Method 2: Class-aware outlier detection with stricter threshold (k=3.0)
+    class_outliers = outliers_by_class_aware(boxes, points, min_class_size=3, k=3.0)
+
+    # Consensus voting - require BOTH methods to agree
+    outlier_ids = []
+    for i, box in enumerate(boxes):
+        votes = 0
+        if dbscan_outliers[i]:
+            votes += 1
+        if class_outliers[i]:
+            votes += 1
+
+        if votes >= min_votes:
+            outlier_ids.append(box["id"])
+
+    return outlier_ids
+
+
+@router.get("/api/task/{task_id}/pre-acceptance-check")
+async def pre_acceptance_check(
+    task_id: int,
+    threshold: float = 0.5,  # Default 50% overlap threshold
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Pre-acceptance algorithm: Check for bounding box overlaps across all jobs in a task.
+    Returns Server-Sent Events (SSE) for real-time progress updates.
+
+    Event types:
+    - init: Initial info with total jobs count
+    - progress: Progress update for each job analyzed
+    - result: Final result for a job (with or without issues)
+    - complete: Final summary when all jobs are processed
+    - error: Error message if something goes wrong
+    """
+    from starlette.responses import StreamingResponse
+    import json
+    import asyncio
+
+    async def generate_events():
+        try:
+            client = CVATClient(user.cvat_host, user.cvat_token)
+
+            # Get all jobs for the task
+            jobs = await client.get_jobs(task_id)
+
+            # Filter to only validation/completed jobs
+            validation_jobs = [j for j in jobs if j.stage == "validation" and j.state == "completed"]
+
+            # Send init event
+            init_data = {
+                "type": "init",
+                "task_id": task_id,
+                "total_jobs": len(jobs),
+                "validation_jobs": len(validation_jobs),
+                "threshold": threshold * 100
+            }
+            yield f"data: {json.dumps(init_data)}\n\n"
+
+            if not validation_jobs:
+                complete_data = {
+                    "type": "complete",
+                    "all_passed": True,
+                    "message": "No jobs in validation/completed state to check",
+                    "jobs_with_issues": []
+                }
+                yield f"data: {json.dumps(complete_data)}\n\n"
+                await client.close()
+                return
+
+            jobs_with_issues = []
+
+            for idx, job in enumerate(validation_jobs):
+                # Send progress event
+                progress_data = {
+                    "type": "progress",
+                    "current": idx + 1,
+                    "total": len(validation_jobs),
+                    "job_id": job.id,
+                    "assignee": job.assignee or "-",
+                    "status": "analyzing"
+                }
+                yield f"data: {json.dumps(progress_data)}\n\n"
+
+                # Get annotations with bounding boxes
+                annotations = await client.get_job_annotations_with_boxes(job.id)
+
+                if "error" in annotations:
+                    result_data = {
+                        "type": "result",
+                        "job_id": job.id,
+                        "assignee": job.assignee or "-",
+                        "status": "error",
+                        "error": annotations.get("error", "Unknown error")
+                    }
+                    yield f"data: {json.dumps(result_data)}\n\n"
+                    continue
+
+                frames_with_overlaps = []
+                frames_with_outliers = []
+
+                # Check each frame for overlapping boxes and outliers
+                for frame_num, shapes in annotations.get("frames", {}).items():
+                    # Only check rectangle-type shapes (bounding boxes)
+                    boxes = []
+                    for shape in shapes:
+                        bbox = get_bbox_from_points(shape.get("points", []), shape.get("type", ""))
+                        if bbox:
+                            boxes.append({
+                                "id": shape.get("id"),
+                                "bbox": bbox,
+                                "label_id": shape.get("label_id")
+                            })
+
+                    # Check all pairs of boxes for overlap (IoU check)
+                    overlaps = []
+                    for i in range(len(boxes)):
+                        for j in range(i + 1, len(boxes)):
+                            iou = calculate_iou(boxes[i]["bbox"], boxes[j]["bbox"])
+                            if iou > threshold:
+                                overlaps.append({
+                                    "box1_id": boxes[i]["id"],
+                                    "box2_id": boxes[j]["id"],
+                                    "iou": round(iou * 100, 1)
+                                })
+
+                    if overlaps:
+                        frames_with_overlaps.append({
+                            "frame": int(frame_num),
+                            "overlaps": overlaps,
+                            "overlap_count": len(overlaps)
+                        })
+
+                    # Check for centroid outliers (consensus: DBSCAN + class-aware)
+                    outlier_ids = detect_centroid_outliers(boxes, min_votes=2)
+                    if outlier_ids:
+                        frames_with_outliers.append({
+                            "frame": int(frame_num),
+                            "outlier_box_ids": outlier_ids,
+                            "outlier_count": len(outlier_ids),
+                            "total_boxes": len(boxes)
+                        })
+
+                # Determine if job has issues
+                has_overlaps = len(frames_with_overlaps) > 0
+                has_outliers = len(frames_with_outliers) > 0
+                has_issues = has_overlaps or has_outliers
+
+                # Send result event for this job
+                if has_issues:
+                    job_result = {
+                        "job_id": job.id,
+                        "assignee": job.assignee or "-",
+                        "frames_with_overlaps": sorted(frames_with_overlaps, key=lambda x: x["frame"]),
+                        "total_overlap_frames": len(frames_with_overlaps),
+                        "total_overlaps": sum(f["overlap_count"] for f in frames_with_overlaps),
+                        "frames_with_outliers": sorted(frames_with_outliers, key=lambda x: x["frame"]),
+                        "total_outlier_frames": len(frames_with_outliers),
+                        "total_outliers": sum(f["outlier_count"] for f in frames_with_outliers)
+                    }
+                    jobs_with_issues.append(job_result)
+                    result_data = {
+                        "type": "result",
+                        "job_id": job.id,
+                        "assignee": job.assignee or "-",
+                        "status": "issues_found",
+                        "total_overlap_frames": len(frames_with_overlaps),
+                        "total_overlaps": sum(f["overlap_count"] for f in frames_with_overlaps),
+                        "frames_with_overlaps": sorted(frames_with_overlaps, key=lambda x: x["frame"]),
+                        "total_outlier_frames": len(frames_with_outliers),
+                        "total_outliers": sum(f["outlier_count"] for f in frames_with_outliers),
+                        "frames_with_outliers": sorted(frames_with_outliers, key=lambda x: x["frame"])
+                    }
+                else:
+                    result_data = {
+                        "type": "result",
+                        "job_id": job.id,
+                        "assignee": job.assignee or "-",
+                        "status": "passed"
+                    }
+
+                yield f"data: {json.dumps(result_data)}\n\n"
+
+            await client.close()
+
+            # Send complete event
+            complete_data = {
+                "type": "complete",
+                "all_passed": len(jobs_with_issues) == 0,
+                "total_jobs": len(jobs),
+                "validation_jobs": len(validation_jobs),
+                "jobs_with_issues_count": len(jobs_with_issues),
+                "jobs_with_issues": jobs_with_issues
+            }
+            yield f"data: {json.dumps(complete_data)}\n\n"
+
+        except Exception as e:
+            print(f"Error in pre_acceptance_check: {e}")
+            import traceback
+            traceback.print_exc()
+            error_data = {"type": "error", "message": str(e)}
+            yield f"data: {json.dumps(error_data)}\n\n"
+
+    return StreamingResponse(
+        generate_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )

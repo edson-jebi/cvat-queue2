@@ -574,3 +574,89 @@ class CVATClient:
             import traceback
             traceback.print_exc()
             return {}
+
+    async def get_job_annotations_with_boxes(self, job_id: int) -> dict:
+        """
+        Get all annotations for a job with bounding box coordinates.
+        Returns a dict with shapes organized by frame.
+
+        Returns:
+            {
+                "job_id": int,
+                "start_frame": int,
+                "stop_frame": int,
+                "frames": {
+                    frame_number: [
+                        {
+                            "id": int,
+                            "label_id": int,
+                            "type": str,  # "rectangle", "polygon", etc.
+                            "points": list,  # [x1, y1, x2, y2] for rectangle
+                            "frame": int
+                        },
+                        ...
+                    ]
+                }
+            }
+        """
+        client = await self._get_client()
+        try:
+            # Get job info for frame range
+            job_response = await client.get(f"/api/jobs/{job_id}")
+            if job_response.status_code != 200:
+                return {"job_id": job_id, "error": "Failed to get job info", "frames": {}}
+
+            job_data = job_response.json()
+            start_frame = job_data.get("start_frame", 0)
+            stop_frame = job_data.get("stop_frame", 0)
+
+            # Get annotations
+            response = await client.get(f"/api/jobs/{job_id}/annotations")
+            if response.status_code != 200:
+                return {"job_id": job_id, "error": "Failed to get annotations", "frames": {}}
+
+            data = response.json()
+            frames = {}
+
+            # Process shapes (bounding boxes, polygons, etc.)
+            for shape in data.get("shapes", []):
+                frame = shape.get("frame", 0)
+                if frame not in frames:
+                    frames[frame] = []
+
+                frames[frame].append({
+                    "id": shape.get("id"),
+                    "label_id": shape.get("label_id"),
+                    "type": shape.get("type", "unknown"),
+                    "points": shape.get("points", []),
+                    "frame": frame
+                })
+
+            # Process tracks (convert to per-frame shapes)
+            for track in data.get("tracks", []):
+                label_id = track.get("label_id")
+                for tracked_shape in track.get("shapes", []):
+                    frame = tracked_shape.get("frame", 0)
+                    if frame not in frames:
+                        frames[frame] = []
+
+                    frames[frame].append({
+                        "id": tracked_shape.get("id"),
+                        "label_id": label_id,
+                        "type": tracked_shape.get("type", "unknown"),
+                        "points": tracked_shape.get("points", []),
+                        "frame": frame,
+                        "is_track": True
+                    })
+
+            return {
+                "job_id": job_id,
+                "start_frame": start_frame,
+                "stop_frame": stop_frame,
+                "frames": frames
+            }
+        except Exception as e:
+            print(f"Error getting job annotations with boxes: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"job_id": job_id, "error": str(e), "frames": {}}

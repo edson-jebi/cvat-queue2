@@ -19,6 +19,14 @@
         </div>
 
         <div class="flex gap-3">
+            {% if all_validation_completed %}
+            <button onclick="openPreAcceptanceModal()" class="apple-btn apple-btn-success">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Pre-Acceptance Algorithm
+            </button>
+            {% endif %}
             <a href="/task/{{ task.id if task else '' }}/analytics" class="apple-btn apple-btn-secondary">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
@@ -119,4 +127,478 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Pre-Acceptance Algorithm Modal -->
+{% if all_validation_completed %}
+<div id="pre-acceptance-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal apple-modal-xl">
+        <div class="apple-modal-header">
+            <h2>Pre-Acceptance Algorithm</h2>
+            <button onclick="closePreAcceptanceModal()" class="apple-modal-close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="apple-modal-body">
+            <!-- Threshold Configuration -->
+            <div class="mb-6 p-4 bg-gray-50 rounded-xl">
+                <div class="flex items-center gap-4">
+                    <label class="text-sm font-medium text-gray-700">Overlap Threshold:</label>
+                    <input type="range" id="overlap-threshold" min="10" max="90" value="50"
+                           class="w-48" oninput="updateThresholdLabel(this.value)">
+                    <span id="threshold-label" class="text-sm font-semibold text-indigo-600">50%</span>
+                    <button onclick="runPreAcceptanceCheck()" class="apple-btn apple-btn-primary apple-btn-sm ml-auto">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                        Run Check
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">
+                    Checks for: (1) Bounding boxes with IoU greater than threshold, (2) Centroid outliers using consensus voting (DBSCAN + Class-aware).
+                </p>
+            </div>
+
+            <!-- Results Container -->
+            <div id="pre-acceptance-results">
+                <div class="text-center py-12 text-gray-500">
+                    <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-lg font-medium">Ready to Check</p>
+                    <p class="text-sm mt-1">Click "Run Check" to analyze bounding box overlaps</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const TASK_ID = {{ task.id if task else 0 }};
+    const CVAT_HOST = '{{ cvat_host.rstrip("/") if cvat_host else "" }}';
+
+    // Store job results as they come in
+    let jobResults = [];
+    let checkState = {
+        totalJobs: 0,
+        validationJobs: 0,
+        threshold: 50,
+        currentJob: 0
+    };
+
+    function updateThresholdLabel(value) {
+        document.getElementById('threshold-label').textContent = value + '%';
+    }
+
+    function openPreAcceptanceModal() {
+        const modal = document.getElementById('pre-acceptance-modal');
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closePreAcceptanceModal() {
+        const modal = document.getElementById('pre-acceptance-modal');
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    async function runPreAcceptanceCheck() {
+        const threshold = document.getElementById('overlap-threshold').value / 100;
+        const resultsContainer = document.getElementById('pre-acceptance-results');
+
+        // Reset state
+        jobResults = [];
+        checkState = { totalJobs: 0, validationJobs: 0, threshold: threshold * 100, currentJob: 0 };
+
+        // Show initial loading with progress structure
+        resultsContainer.innerHTML = `
+            <div id="progress-section">
+                <div class="mb-6">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700">Initializing...</span>
+                        <span id="progress-text" class="text-sm text-gray-500">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                        <div id="progress-bar" class="bg-indigo-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div id="current-job-status" class="text-center py-4 text-gray-500">
+                    <div class="apple-spinner mx-auto mb-3"></div>
+                    <p>Connecting to server...</p>
+                </div>
+                <div id="jobs-list" class="space-y-2 mt-6"></div>
+            </div>
+        `;
+
+        try {
+            const response = await fetch(`/api/task/${TASK_ID}/pre-acceptance-check?threshold=${threshold}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // Process complete SSE messages
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            handleSSEEvent(data);
+                        } catch (e) {
+                            console.error('Failed to parse SSE data:', e);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            resultsContainer.innerHTML = `
+                <div class="text-center py-8 text-red-500">
+                    <svg class="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                    <p class="font-medium">Failed to run check</p>
+                    <p class="text-sm mt-1">${error.message}</p>
+                </div>
+            `;
+        }
+    }
+
+    function handleSSEEvent(data) {
+        switch (data.type) {
+            case 'init':
+                handleInit(data);
+                break;
+            case 'progress':
+                handleProgress(data);
+                break;
+            case 'result':
+                handleResult(data);
+                break;
+            case 'complete':
+                handleComplete(data);
+                break;
+            case 'error':
+                handleError(data);
+                break;
+        }
+    }
+
+    function handleInit(data) {
+        checkState.totalJobs = data.total_jobs;
+        checkState.validationJobs = data.validation_jobs;
+        checkState.threshold = data.threshold;
+
+        document.getElementById('current-job-status').innerHTML = `
+            <p class="text-gray-600">Found <strong>${data.validation_jobs}</strong> validation jobs to analyze</p>
+            <p class="text-sm text-gray-400 mt-1">Threshold: ${data.threshold}% IoU</p>
+        `;
+    }
+
+    function handleProgress(data) {
+        checkState.currentJob = data.current;
+        const percent = Math.round((data.current / data.total) * 100);
+
+        document.getElementById('progress-bar').style.width = `${percent}%`;
+        document.getElementById('progress-text').textContent = `${percent}%`;
+
+        document.getElementById('current-job-status').innerHTML = `
+            <div class="flex items-center justify-center gap-3">
+                <div class="apple-spinner"></div>
+                <div class="text-left">
+                    <p class="font-medium text-gray-700">Analyzing Job ${data.job_id}</p>
+                    <p class="text-sm text-gray-500">Assignee: ${data.assignee} (${data.current}/${data.total})</p>
+                </div>
+            </div>
+        `;
+    }
+
+    function handleResult(data) {
+        const jobsList = document.getElementById('jobs-list');
+
+        let statusIcon, statusClass, statusText;
+        if (data.status === 'passed') {
+            statusIcon = `<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>`;
+            statusClass = 'bg-green-50 border-green-200';
+            statusText = '<span class="text-green-600 text-sm">Passed</span>';
+        } else if (data.status === 'issues_found') {
+            statusIcon = `<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>`;
+            statusClass = 'bg-red-50 border-red-200';
+            // Build status text showing both overlaps and outliers
+            let issues = [];
+            if (data.total_overlap_frames > 0) {
+                issues.push(`${data.total_overlap_frames} overlap(s)`);
+            }
+            if (data.total_outlier_frames > 0) {
+                issues.push(`${data.total_outlier_frames} outlier(s)`);
+            }
+            statusText = `<span class="text-red-600 text-sm font-medium">${issues.join(', ')}</span>`;
+            jobResults.push(data);
+        } else {
+            statusIcon = `<svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>`;
+            statusClass = 'bg-yellow-50 border-yellow-200';
+            statusText = `<span class="text-yellow-600 text-sm">${data.error || 'Error'}</span>`;
+        }
+
+        const jobCard = document.createElement('div');
+        jobCard.className = `flex items-center justify-between p-3 rounded-lg border ${statusClass} transition-all`;
+        jobCard.innerHTML = `
+            <div class="flex items-center gap-3">
+                ${statusIcon}
+                <div>
+                    <span class="font-mono font-medium">Job ${data.job_id}</span>
+                    <span class="text-gray-500 text-sm ml-2">${data.assignee}</span>
+                </div>
+            </div>
+            ${statusText}
+        `;
+        jobsList.appendChild(jobCard);
+
+        // Scroll to show latest result
+        jobCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function handleComplete(data) {
+        // Hide progress section and show final results
+        document.getElementById('progress-section').innerHTML = '';
+        renderFinalResults(data);
+    }
+
+    function handleError(data) {
+        const resultsContainer = document.getElementById('pre-acceptance-results');
+        resultsContainer.innerHTML = `
+            <div class="text-center py-8 text-red-500">
+                <svg class="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <p class="font-medium">Error running check</p>
+                <p class="text-sm mt-1">${data.message}</p>
+            </div>
+        `;
+    }
+
+    function renderFinalResults(data) {
+        const resultsContainer = document.getElementById('pre-acceptance-results');
+
+        // Calculate totals for outliers
+        let totalOutlierFrames = 0;
+        let totalOutliers = 0;
+        data.jobs_with_issues.forEach(job => {
+            totalOutlierFrames += job.total_outlier_frames || 0;
+            totalOutliers += job.total_outliers || 0;
+        });
+
+        let html = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="apple-stat-card text-center">
+                    <p class="apple-stat-value text-2xl">${data.total_jobs}</p>
+                    <p class="apple-stat-label">Total Jobs</p>
+                </div>
+                <div class="apple-stat-card text-center">
+                    <p class="apple-stat-value text-2xl">${data.validation_jobs}</p>
+                    <p class="apple-stat-label">Validation Jobs</p>
+                </div>
+                <div class="apple-stat-card text-center">
+                    <p class="apple-stat-value text-2xl ${data.all_passed ? 'text-green-600' : 'text-red-600'}">${data.jobs_with_issues_count}</p>
+                    <p class="apple-stat-label">Jobs with Issues</p>
+                </div>
+                <div class="apple-stat-card text-center">
+                    <p class="apple-stat-value text-2xl">${checkState.threshold}%</p>
+                    <p class="apple-stat-label">IoU Threshold</p>
+                </div>
+            </div>
+        `;
+
+        if (data.all_passed) {
+            html += `
+                <div class="text-center py-8">
+                    <svg class="w-20 h-20 mx-auto mb-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-xl font-semibold text-green-600">All Checks Passed!</p>
+                    <p class="text-gray-500 mt-2">No overlapping bounding boxes or centroid outliers detected.</p>
+                </div>
+            `;
+        } else {
+            html += `
+                <div class="apple-alert apple-alert-warning mb-6">
+                    <div class="apple-alert-icon">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                    </div>
+                    <div class="apple-alert-content">
+                        <p><strong>${data.jobs_with_issues_count} job(s)</strong> have issues:</p>
+                        <ul class="text-sm mt-1 list-disc list-inside">
+                            <li>IoU overlaps > ${checkState.threshold}% threshold</li>
+                            <li>Centroid outliers (consensus: DBSCAN + Class-aware)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+            `;
+
+            // Render each job with issues
+            data.jobs_with_issues.forEach(job => {
+                const hasOverlaps = job.total_overlap_frames > 0;
+                const hasOutliers = job.total_outlier_frames > 0;
+
+                html += `
+                    <div class="apple-card">
+                        <div class="apple-card-header flex justify-between items-center">
+                            <div>
+                                <span class="font-mono font-semibold">Job ${job.job_id}</span>
+                                <span class="text-gray-500 ml-2">Assignee: ${job.assignee}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                `;
+
+                if (hasOverlaps) {
+                    html += `
+                                <span class="apple-badge apple-badge-error">${job.total_overlaps} overlap(s)</span>
+                    `;
+                }
+                if (hasOutliers) {
+                    html += `
+                                <span class="apple-badge" style="background-color: #fef3c7; color: #92400e;">${job.total_outliers} outlier(s)</span>
+                    `;
+                }
+
+                html += `
+                            </div>
+                        </div>
+                        <div class="p-4">
+                `;
+
+                // Overlaps section
+                if (hasOverlaps) {
+                    html += `
+                            <div class="mb-4">
+                                <h4 class="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                                    </svg>
+                                    Overlapping Boxes (IoU > ${checkState.threshold}%)
+                                </h4>
+                                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                    `;
+
+                    const overlapsToShow = job.frames_with_overlaps.slice(0, 12);
+                    overlapsToShow.forEach(frame => {
+                        html += `
+                            <div class="flex items-center justify-between px-3 py-2 bg-red-50 rounded-lg border border-red-200">
+                                <span class="text-sm font-medium text-red-700">Frame ${frame.frame}</span>
+                                <span class="text-xs text-red-500">${frame.overlap_count}</span>
+                            </div>
+                        `;
+                    });
+
+                    if (job.frames_with_overlaps.length > 12) {
+                        html += `
+                            <div class="flex items-center justify-center px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-500">
+                                +${job.frames_with_overlaps.length - 12} more
+                            </div>
+                        `;
+                    }
+
+                    html += `
+                                </div>
+                            </div>
+                    `;
+                }
+
+                // Outliers section
+                if (hasOutliers) {
+                    html += `
+                            <div class="mb-4">
+                                <h4 class="text-sm font-semibold text-amber-700 mb-2 flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z"></path>
+                                    </svg>
+                                    Centroid Outliers (DBSCAN + Class-aware)
+                                </h4>
+                                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                    `;
+
+                    const outliersToShow = job.frames_with_outliers.slice(0, 12);
+                    outliersToShow.forEach(frame => {
+                        html += `
+                            <div class="flex items-center justify-between px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+                                <span class="text-sm font-medium text-amber-700">Frame ${frame.frame}</span>
+                                <span class="text-xs text-amber-500">${frame.outlier_count}/${frame.total_boxes}</span>
+                            </div>
+                        `;
+                    });
+
+                    if (job.frames_with_outliers.length > 12) {
+                        html += `
+                            <div class="flex items-center justify-center px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-500">
+                                +${job.frames_with_outliers.length - 12} more
+                            </div>
+                        `;
+                    }
+
+                    html += `
+                                </div>
+                            </div>
+                    `;
+                }
+
+                const jobUrl = `${CVAT_HOST}/tasks/${TASK_ID}/jobs/${job.job_id}`;
+                html += `
+                            <div class="mt-4 flex justify-end">
+                                <a href="${jobUrl}" target="_blank" rel="noopener noreferrer"
+                                   class="apple-btn apple-btn-primary apple-btn-sm"
+                                   onclick="console.log('Opening job:', '${jobUrl}')">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                    </svg>
+                                    Open Job in CVAT
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+        }
+
+        resultsContainer.innerHTML = html;
+    }
+
+    // Close modal on escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closePreAcceptanceModal();
+        }
+    });
+
+    // Close modal on overlay click
+    document.getElementById('pre-acceptance-modal')?.addEventListener('click', (e) => {
+        if (e.target.classList.contains('apple-modal-overlay')) {
+            closePreAcceptanceModal();
+        }
+    });
+</script>
+{% endif %}
 {% endblock %}
