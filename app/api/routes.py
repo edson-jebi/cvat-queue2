@@ -1916,6 +1916,109 @@ def detect_centroid_outliers(boxes: list, min_votes: int = 2) -> list:
     return outlier_ids
 
 
+@router.get("/api/job/{job_id}/fast-validation")
+async def fast_validation_check(
+    job_id: int,
+    threshold: float = 0.5,  # Default 50% overlap threshold
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Fast validation check for a single job.
+    Runs IoU overlap and centroid outlier detection.
+    Returns JSON with issues found or passed status.
+    """
+    try:
+        client = CVATClient(user.cvat_host, user.cvat_token)
+
+        # Get annotations with bounding boxes
+        annotations = await client.get_job_annotations_with_boxes(job_id)
+        await client.close()
+
+        if "error" in annotations:
+            return JSONResponse({
+                "status": "error",
+                "error": annotations.get("error", "Unknown error")
+            }, status_code=500)
+
+        frames_with_overlaps = []
+        frames_with_outliers = []
+
+        # Check each frame for overlapping boxes and outliers
+        for frame_num, shapes in annotations.get("frames", {}).items():
+            # Only check rectangle-type shapes (bounding boxes)
+            boxes = []
+            for shape in shapes:
+                bbox = get_bbox_from_points(shape.get("points", []), shape.get("type", ""))
+                if bbox:
+                    boxes.append({
+                        "id": shape.get("id"),
+                        "bbox": bbox,
+                        "label_id": shape.get("label_id")
+                    })
+
+            # Check all pairs of boxes for overlap (IoU check)
+            overlaps = []
+            for i in range(len(boxes)):
+                for j in range(i + 1, len(boxes)):
+                    iou = calculate_iou(boxes[i]["bbox"], boxes[j]["bbox"])
+                    if iou > threshold:
+                        overlaps.append({
+                            "box1_id": boxes[i]["id"],
+                            "box2_id": boxes[j]["id"],
+                            "iou": round(iou * 100, 1)
+                        })
+
+            if overlaps:
+                frames_with_overlaps.append({
+                    "frame": int(frame_num),
+                    "overlaps": overlaps,
+                    "overlap_count": len(overlaps)
+                })
+
+            # Check for centroid outliers (consensus: DBSCAN + class-aware)
+            outlier_ids = detect_centroid_outliers(boxes, min_votes=2)
+            if outlier_ids:
+                frames_with_outliers.append({
+                    "frame": int(frame_num),
+                    "outlier_box_ids": outlier_ids,
+                    "outlier_count": len(outlier_ids),
+                    "total_boxes": len(boxes)
+                })
+
+        # Determine if job has issues
+        has_overlaps = len(frames_with_overlaps) > 0
+        has_outliers = len(frames_with_outliers) > 0
+        has_issues = has_overlaps or has_outliers
+
+        if has_issues:
+            return JSONResponse({
+                "status": "issues_found",
+                "job_id": job_id,
+                "total_overlap_frames": len(frames_with_overlaps),
+                "total_overlaps": sum(f["overlap_count"] for f in frames_with_overlaps),
+                "frames_with_overlaps": sorted(frames_with_overlaps, key=lambda x: x["frame"]),
+                "total_outlier_frames": len(frames_with_outliers),
+                "total_outliers": sum(f["outlier_count"] for f in frames_with_outliers),
+                "frames_with_outliers": sorted(frames_with_outliers, key=lambda x: x["frame"])
+            })
+        else:
+            return JSONResponse({
+                "status": "passed",
+                "job_id": job_id,
+                "message": "No issues detected"
+            })
+
+    except Exception as e:
+        print(f"Error in fast_validation_check: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            "status": "error",
+            "error": str(e)
+        }, status_code=500)
+
+
 @router.get("/api/task/{task_id}/pre-acceptance-check")
 async def pre_acceptance_check(
     task_id: int,

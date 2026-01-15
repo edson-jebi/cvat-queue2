@@ -109,6 +109,16 @@
                                     Take
                                 </button>
                                 {% elif job.status.value == 'in_review' %}
+                                <!-- Fast Validation Button -->
+                                <button type="button"
+                                        onclick="runFastValidation({{ job.id }}, {{ job.cvat_job_id }}, {{ job.cvat_task_id }}, '{{ job.cvat_host.rstrip('/') }}')"
+                                        class="apple-btn apple-btn-info apple-btn-sm"
+                                        title="Run fast validation checks (IoU overlap & outliers)">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    Fast
+                                </button>
                                 <form method="POST" action="/queue/{{ job.id }}/validate" class="inline">
                                     <input type="hidden" name="action" value="validate">
                                     <input type="hidden" name="notes" value="">
@@ -146,6 +156,16 @@
                             </button>
                             {% elif job.status.value == 'in_review' %}
                             <div class="flex items-center gap-2 justify-end flex-wrap">
+                                <!-- Fast Validation Button -->
+                                <button type="button"
+                                        onclick="runFastValidation({{ job.id }}, {{ job.cvat_job_id }}, {{ job.cvat_task_id }}, '{{ job.cvat_host.rstrip('/') }}')"
+                                        class="apple-btn apple-btn-info apple-btn-sm"
+                                        title="Run fast validation checks (IoU overlap & outliers)">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    Fast
+                                </button>
                                 <a href="{{ job.cvat_host.rstrip('/') }}/tasks/{{ job.cvat_task_id }}/jobs/{{ job.cvat_job_id }}"
                                    target="_blank"
                                    class="apple-btn apple-btn-primary apple-btn-sm">
@@ -264,6 +284,153 @@
     </div>
 </div>
 
+<!-- Fast Validation Modal -->
+<div id="fast-validation-modal" class="apple-modal-overlay hidden">
+    <div class="apple-modal" style="max-width: 600px;">
+        <div class="apple-modal-header">
+            <h2>Fast Validation</h2>
+            <button onclick="closeFastValidationModal()" class="apple-modal-close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="apple-modal-body">
+            <!-- Loading State -->
+            <div id="fast-validation-loading" class="text-center py-8">
+                <div class="inline-flex items-center gap-3">
+                    <svg class="w-6 h-6 animate-spin text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    <span class="apple-body text-gray-600">Running validation checks...</span>
+                </div>
+            </div>
+
+            <!-- Results Section (hidden initially) -->
+            <div id="fast-validation-results" class="hidden">
+                <!-- Passed State -->
+                <div id="fast-validation-passed" class="hidden">
+                    <div class="apple-alert apple-alert-success mb-6">
+                        <div class="apple-alert-icon">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="apple-alert-content">
+                            <p class="apple-body font-medium">All checks passed!</p>
+                            <p class="apple-footnote text-gray-600 mt-1">No overlapping boxes or outliers detected.</p>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                        <a id="fast-validation-cvat-link-passed" href="#" target="_blank" class="apple-btn apple-btn-primary w-full justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                            </svg>
+                            Continue Review in CVAT
+                        </a>
+                        <div class="flex gap-3">
+                            <button onclick="approveFromFastValidation()" class="apple-btn apple-btn-success flex-1 justify-center">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Approve Job
+                            </button>
+                            <button onclick="closeFastValidationModal()" class="apple-btn apple-btn-secondary flex-1 justify-center">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Issues Found State -->
+                <div id="fast-validation-issues" class="hidden">
+                    <div class="apple-alert apple-alert-warning mb-4">
+                        <div class="apple-alert-icon">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                        </div>
+                        <div class="apple-alert-content">
+                            <p class="apple-body font-medium">Issues detected</p>
+                            <p class="apple-footnote text-gray-600 mt-1">Review the issues below and decide how to proceed.</p>
+                        </div>
+                    </div>
+
+                    <!-- Issues Summary -->
+                    <div id="fast-validation-summary" class="grid grid-cols-2 gap-3 mb-4">
+                        <!-- Will be populated by JS -->
+                    </div>
+
+                    <!-- Issues Details (collapsible) -->
+                    <div class="mb-6">
+                        <button type="button" onclick="toggleIssueDetails()" class="apple-btn apple-btn-ghost apple-btn-sm w-full justify-between" id="toggle-details-btn">
+                            <span>Show Details</span>
+                            <svg class="w-4 h-4 transition-transform" id="toggle-details-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </button>
+                        <div id="issue-details" class="hidden mt-3 max-h-64 overflow-y-auto">
+                            <!-- Overlaps Section -->
+                            <div id="overlaps-section" class="hidden mb-4">
+                                <h4 class="apple-footnote font-medium text-gray-700 mb-2">Overlapping Boxes</h4>
+                                <div id="overlaps-list" class="space-y-1">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+                            <!-- Outliers Section -->
+                            <div id="outliers-section" class="hidden">
+                                <h4 class="apple-footnote font-medium text-gray-700 mb-2">Centroid Outliers</h4>
+                                <div id="outliers-list" class="space-y-1">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex flex-col gap-3">
+                        <a id="fast-validation-cvat-link" href="#" target="_blank" class="apple-btn apple-btn-primary w-full justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                            </svg>
+                            Continue Review in CVAT
+                        </a>
+                        <div class="flex gap-3">
+                            <button onclick="approveFromFastValidation()" class="apple-btn apple-btn-success flex-1 justify-center">
+                                Approve Anyway
+                            </button>
+                            <button onclick="rejectFromFastValidation()" class="apple-btn apple-btn-danger flex-1 justify-center">
+                                Reject
+                            </button>
+                        </div>
+                        <button onclick="closeFastValidationModal()" class="apple-btn apple-btn-secondary w-full justify-center">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Error State -->
+                <div id="fast-validation-error" class="hidden">
+                    <div class="apple-alert apple-alert-danger mb-6">
+                        <div class="apple-alert-icon">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        </div>
+                        <div class="apple-alert-content">
+                            <p class="apple-body font-medium">Validation Failed</p>
+                            <p id="fast-validation-error-msg" class="apple-footnote text-gray-600 mt-1"></p>
+                        </div>
+                    </div>
+                    <button onclick="closeFastValidationModal()" class="apple-btn apple-btn-secondary w-full justify-center">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Finish Validation Modal -->
 <div id="finish-validation-modal" class="apple-modal-overlay hidden">
     <div class="apple-modal">
@@ -313,6 +480,9 @@
 <script>
 // Store current finish validation job data
 let finishValidationData = null;
+
+// Store current fast validation job data
+let fastValidationData = null;
 
 async function startReview(jobId) {
     try {
@@ -415,11 +585,188 @@ async function executeFinishValidation() {
     }
 }
 
+// Fast Validation Functions
+async function runFastValidation(queueId, cvatJobId, cvatTaskId, cvatHost) {
+    fastValidationData = { queueId, cvatJobId, cvatTaskId, cvatHost };
+
+    // Show modal with loading state
+    const modal = document.getElementById('fast-validation-modal');
+    const loading = document.getElementById('fast-validation-loading');
+    const results = document.getElementById('fast-validation-results');
+    const passed = document.getElementById('fast-validation-passed');
+    const issues = document.getElementById('fast-validation-issues');
+    const error = document.getElementById('fast-validation-error');
+
+    // Reset states
+    loading.classList.remove('hidden');
+    results.classList.add('hidden');
+    passed.classList.add('hidden');
+    issues.classList.add('hidden');
+    error.classList.add('hidden');
+
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    try {
+        const response = await fetch(`/api/job/${cvatJobId}/fast-validation?threshold=0.5`);
+        const data = await response.json();
+
+        loading.classList.add('hidden');
+        results.classList.remove('hidden');
+
+        if (data.status === 'passed') {
+            passed.classList.remove('hidden');
+            // Set CVAT link for passed state too
+            const cvatLinkPassed = document.getElementById('fast-validation-cvat-link-passed');
+            cvatLinkPassed.href = `${fastValidationData.cvatHost}/tasks/${fastValidationData.cvatTaskId}/jobs/${fastValidationData.cvatJobId}`;
+        } else if (data.status === 'issues_found') {
+            issues.classList.remove('hidden');
+            renderFastValidationIssues(data);
+        } else if (data.status === 'error') {
+            error.classList.remove('hidden');
+            document.getElementById('fast-validation-error-msg').textContent = data.error || 'An unknown error occurred';
+        }
+    } catch (err) {
+        loading.classList.add('hidden');
+        results.classList.remove('hidden');
+        error.classList.remove('hidden');
+        document.getElementById('fast-validation-error-msg').textContent = err.message || 'Network error';
+    }
+}
+
+function renderFastValidationIssues(data) {
+    // Update CVAT link
+    const cvatLink = document.getElementById('fast-validation-cvat-link');
+    cvatLink.href = `${fastValidationData.cvatHost}/tasks/${fastValidationData.cvatTaskId}/jobs/${fastValidationData.cvatJobId}`;
+
+    // Update summary
+    const summary = document.getElementById('fast-validation-summary');
+    summary.innerHTML = `
+        <div class="apple-stat-card-sm">
+            <p class="apple-footnote text-gray-500">Overlap Frames</p>
+            <p class="apple-body font-semibold ${data.total_overlap_frames > 0 ? 'text-orange-600' : 'text-gray-400'}">${data.total_overlap_frames || 0}</p>
+        </div>
+        <div class="apple-stat-card-sm">
+            <p class="apple-footnote text-gray-500">Outlier Frames</p>
+            <p class="apple-body font-semibold ${data.total_outlier_frames > 0 ? 'text-orange-600' : 'text-gray-400'}">${data.total_outlier_frames || 0}</p>
+        </div>
+    `;
+
+    // Render overlaps
+    const overlapsSection = document.getElementById('overlaps-section');
+    const overlapsList = document.getElementById('overlaps-list');
+    if (data.frames_with_overlaps && data.frames_with_overlaps.length > 0) {
+        overlapsSection.classList.remove('hidden');
+        overlapsList.innerHTML = data.frames_with_overlaps.map(frame => `
+            <div class="bg-orange-50 rounded px-3 py-2 text-sm">
+                <span class="font-medium">Frame ${frame.frame}</span>
+                <span class="text-gray-500 ml-2">${frame.overlap_count} overlap(s)</span>
+            </div>
+        `).join('');
+    } else {
+        overlapsSection.classList.add('hidden');
+    }
+
+    // Render outliers
+    const outliersSection = document.getElementById('outliers-section');
+    const outliersList = document.getElementById('outliers-list');
+    if (data.frames_with_outliers && data.frames_with_outliers.length > 0) {
+        outliersSection.classList.remove('hidden');
+        outliersList.innerHTML = data.frames_with_outliers.map(frame => `
+            <div class="bg-purple-50 rounded px-3 py-2 text-sm">
+                <span class="font-medium">Frame ${frame.frame}</span>
+                <span class="text-gray-500 ml-2">${frame.outlier_count} outlier(s) of ${frame.total_boxes} boxes</span>
+            </div>
+        `).join('');
+    } else {
+        outliersSection.classList.add('hidden');
+    }
+}
+
+function toggleIssueDetails() {
+    const details = document.getElementById('issue-details');
+    const icon = document.getElementById('toggle-details-icon');
+    const btn = document.getElementById('toggle-details-btn');
+
+    if (details.classList.contains('hidden')) {
+        details.classList.remove('hidden');
+        icon.style.transform = 'rotate(180deg)';
+        btn.querySelector('span').textContent = 'Hide Details';
+    } else {
+        details.classList.add('hidden');
+        icon.style.transform = 'rotate(0deg)';
+        btn.querySelector('span').textContent = 'Show Details';
+    }
+}
+
+function closeFastValidationModal() {
+    const modal = document.getElementById('fast-validation-modal');
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+    // Reset details toggle
+    const details = document.getElementById('issue-details');
+    const icon = document.getElementById('toggle-details-icon');
+    const btn = document.getElementById('toggle-details-btn');
+    details.classList.add('hidden');
+    icon.style.transform = 'rotate(0deg)';
+    btn.querySelector('span').textContent = 'Show Details';
+    fastValidationData = null;
+}
+
+async function approveFromFastValidation() {
+    if (!fastValidationData) return;
+
+    try {
+        const formData = new FormData();
+        formData.append('action', 'validate');
+        formData.append('notes', 'Approved via Fast Validation');
+
+        const response = await fetch(`/queue/${fastValidationData.queueId}/validate`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok || response.redirected) {
+            closeFastValidationModal();
+            window.location.reload();
+        } else {
+            alert('Failed to approve job');
+        }
+    } catch (err) {
+        alert('Error approving job: ' + err.message);
+    }
+}
+
+async function rejectFromFastValidation() {
+    if (!fastValidationData) return;
+
+    try {
+        const formData = new FormData();
+        formData.append('action', 'reject');
+        formData.append('notes', 'Rejected via Fast Validation - issues detected');
+
+        const response = await fetch(`/queue/${fastValidationData.queueId}/validate`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok || response.redirected) {
+            closeFastValidationModal();
+            window.location.reload();
+        } else {
+            alert('Failed to reject job');
+        }
+    } catch (err) {
+        alert('Error rejecting job: ' + err.message);
+    }
+}
+
 // Close modal on escape key
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         closeCvatModal();
         closeFinishValidationModal();
+        closeFastValidationModal();
     }
 });
 
@@ -435,6 +782,12 @@ document.getElementById('finish-validation-modal').addEventListener('click', (e)
         closeFinishValidationModal();
     }
 });
+
+document.getElementById('fast-validation-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'fast-validation-modal') {
+        closeFastValidationModal();
+    }
+});
 </script>
 
 <style>
@@ -446,6 +799,14 @@ document.getElementById('finish-validation-modal').addEventListener('click', (e)
     .apple-btn-warning:hover {
         background: linear-gradient(135deg, #D97706 0%, #B45309 100%);
     }
+    .apple-btn-info {
+        background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+        color: white;
+        border: none;
+    }
+    .apple-btn-info:hover {
+        background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+    }
     .animate-spin {
         animation: spin 1s linear infinite;
     }
@@ -453,6 +814,25 @@ document.getElementById('finish-validation-modal').addEventListener('click', (e)
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
     }
-
+    .apple-stat-card-sm {
+        background: #f9fafb;
+        border-radius: 8px;
+        padding: 12px;
+        text-align: center;
+    }
+    .apple-alert-success {
+        background-color: #ecfdf5;
+        border-left: 4px solid #10b981;
+    }
+    .apple-alert-success .apple-alert-icon {
+        color: #10b981;
+    }
+    .apple-alert-danger {
+        background-color: #fef2f2;
+        border-left: 4px solid #ef4444;
+    }
+    .apple-alert-danger .apple-alert-icon {
+        color: #ef4444;
+    }
 </style>
 {% endblock %}
