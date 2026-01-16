@@ -5,7 +5,7 @@ import shutil
 import math
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Header
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -21,6 +21,7 @@ from app.api.auth import get_current_user, require_user, require_admin
 from app.services.cvat_client import CVATClient
 from app.services.queue_service import QueueService
 from app.services.analytics_service import AnalyticsService
+from app.services.ml_outlier_detection import get_ml_detector
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -1920,32 +1921,94 @@ def detect_centroid_outliers(boxes: list, min_votes: int = 2) -> list:
 async def fast_validation_check(
     job_id: int,
     threshold: float = 0.5,  # Default 50% overlap threshold
+    use_ml: bool = True,  # Enable ML-based detection by default
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Fast validation check for a single job.
-    Runs IoU overlap and centroid outlier detection.
+    Runs IoU overlap, centroid outlier detection, and ML-based detection (if available).
     Returns JSON with issues found or passed status.
     """
+    client = None
     try:
+        print(f"🔧 Initializing CVAT client for host: {user.cvat_host}")
         client = CVATClient(user.cvat_host, user.cvat_token)
 
-        # Get annotations with bounding boxes
+        # Validate token first
+        print(f"🔑 Validating authentication token...")
+        is_valid = await client.validate_token()
+        if not is_valid:
+            print(f"❌ Invalid or expired token")
+            return JSONResponse({
+                "status": "error",
+                "error": "Authentication failed - invalid or expired token"
+            }, status_code=401)
+        print(f"✅ Token validated successfully")
+
+        # Get job info to extract task_id - SDK method
+        print(f"📋 Fetching job info for job {job_id}")
+        job_obj = await client.get_job(job_id)
+        if not job_obj:
+            print(f"❌ Could not fetch job {job_id} info")
+            return JSONResponse({
+                "status": "error",
+                "error": f"Job {job_id} not found"
+            }, status_code=404)
+
+        task_id = job_obj.task_id
+        print(f"✅ Job {job_id} belongs to task {task_id}")
+
+        # Get task info to extract project_id - SDK method
+        print(f"📁 Fetching task info for task {task_id}")
+        try:
+            task_obj = await client.get_task(task_id)
+            if not task_obj:
+                print(f"⚠️  Could not fetch task {task_id} - task object is None")
+                project_id = None
+            else:
+                project_id = task_obj.project_id
+                if project_id:
+                    print(f"✅ Task {task_id} belongs to project {project_id}")
+                else:
+                    print(f"⚠️  Task {task_id} has no project_id (standalone task)")
+        except Exception as task_err:
+            print(f"⚠️  Error fetching task {task_id}: {task_err}")
+            import traceback
+            traceback.print_exc()
+            project_id = None
+
+        # Get annotations with bounding boxes - SDK method
+        print(f"📊 Fetching annotations for job {job_id}")
         annotations = await client.get_job_annotations_with_boxes(job_id)
-        await client.close()
 
         if "error" in annotations:
+            print(f"❌ Error in annotations: {annotations.get('error')}")
             return JSONResponse({
                 "status": "error",
                 "error": annotations.get("error", "Unknown error")
             }, status_code=500)
 
+        print(f"✅ Annotations fetched successfully")
+        print(f"📈 Processing frames: {len(annotations.get('frames', {}))} frames")
+
         frames_with_overlaps = []
         frames_with_outliers = []
+        frames_with_ml_outliers = []
+
+        # Prepare frame annotations for ML detection
+        frame_annotations_for_ml = {}
 
         # Check each frame for overlapping boxes and outliers
-        for frame_num, shapes in annotations.get("frames", {}).items():
+        frames = annotations.get("frames", {})
+        if not isinstance(frames, dict):
+            print(f"❌ Invalid frames data type: {type(frames)}")
+            return JSONResponse({
+                "status": "error",
+                "error": "Invalid frames data structure"
+            }, status_code=500)
+
+        for frame_num, shapes in frames.items():
             # Only check rectangle-type shapes (bounding boxes)
             boxes = []
             for shape in shapes:
@@ -1956,6 +2019,9 @@ async def fast_validation_check(
                         "bbox": bbox,
                         "label_id": shape.get("label_id")
                     })
+
+            # Store for ML detection
+            frame_annotations_for_ml[int(frame_num)] = boxes
 
             # Check all pairs of boxes for overlap (IoU check)
             overlaps = []
@@ -1986,13 +2052,77 @@ async def fast_validation_check(
                     "total_boxes": len(boxes)
                 })
 
+        # ML-based outlier detection (if enabled and available)
+        ml_detection_used = False
+        ml_model_path = None
+        if use_ml and task_id:
+            try:
+                # Get ML detector for this CVAT instance and project
+                ml_detector = get_ml_detector(
+                    project_id=project_id,
+                    cvat_host=user.cvat_host
+                )
+                if ml_detector.is_available():
+                    ml_model_path = ml_detector.model_path
+
+                    # Limit ML detection to first 2 frames with annotations for testing/performance
+                    # Reduced from 5 to 2 to avoid timeout issues
+                    frames_to_check = dict(list(frame_annotations_for_ml.items())[:2])
+                    total_frames = len(frame_annotations_for_ml)
+
+                    if total_frames > 2:
+                        print(f"⚠️  ML Detection: Limiting to first 2 frames (total: {total_frames})")
+
+                    print(f"✅ ML Detection enabled for job {job_id} (project {project_id})")
+                    print(f"   Processing {len(frames_to_check)} frames")
+
+                    import time
+                    start_time = time.time()
+
+                    # Pass CVATClient to ML detector (SDK only)
+                    ml_outliers = await ml_detector.detect_ml_outliers(
+                        cvat_client=client,
+                        task_id=task_id,
+                        frame_annotations=frames_to_check,
+                        conf_threshold=0.25,
+                        iou_threshold=0.3,
+                        min_confidence=0.5
+                    )
+
+                    elapsed = time.time() - start_time
+                    print(f"⏱️  ML Detection completed in {elapsed:.2f} seconds")
+
+                    # Convert ML outliers to response format
+                    for frame_num, outlier_details in ml_outliers.items():
+                        if outlier_details:
+                            frames_with_ml_outliers.append({
+                                "frame": frame_num,
+                                "outlier_box_ids": [detail["annotation_id"] for detail in outlier_details],
+                                "outlier_count": len(outlier_details),
+                                "detection_method": "ml",
+                                "outlier_details": outlier_details  # Include detailed info
+                            })
+
+                    ml_detection_used = True
+
+                    # Add note if frames were limited
+                    if total_frames > 5:
+                        print(f"ℹ️  Note: ML detection ran on {len(frames_to_check)}/{total_frames} frames for performance")
+                else:
+                    print(f"⚠️  ML Detection requested but no model available for job {job_id} (project {project_id})")
+            except Exception as ml_error:
+                print(f"❌ ML detection failed (continuing with geometric methods): {ml_error}")
+                import traceback
+                traceback.print_exc()
+
         # Determine if job has issues
         has_overlaps = len(frames_with_overlaps) > 0
         has_outliers = len(frames_with_outliers) > 0
-        has_issues = has_overlaps or has_outliers
+        has_ml_outliers = len(frames_with_ml_outliers) > 0
+        has_issues = has_overlaps or has_outliers or has_ml_outliers
 
         if has_issues:
-            return JSONResponse({
+            response_data = {
                 "status": "issues_found",
                 "job_id": job_id,
                 "total_overlap_frames": len(frames_with_overlaps),
@@ -2000,23 +2130,182 @@ async def fast_validation_check(
                 "frames_with_overlaps": sorted(frames_with_overlaps, key=lambda x: x["frame"]),
                 "total_outlier_frames": len(frames_with_outliers),
                 "total_outliers": sum(f["outlier_count"] for f in frames_with_outliers),
-                "frames_with_outliers": sorted(frames_with_outliers, key=lambda x: x["frame"])
-            })
+                "frames_with_outliers": sorted(frames_with_outliers, key=lambda x: x["frame"]),
+                "ml_detection_used": ml_detection_used,
+                "ml_model_path": ml_model_path
+            }
+
+            # Add ML outliers if available
+            if has_ml_outliers:
+                response_data["total_ml_outlier_frames"] = len(frames_with_ml_outliers)
+                response_data["total_ml_outliers"] = sum(f["outlier_count"] for f in frames_with_ml_outliers)
+                response_data["frames_with_ml_outliers"] = sorted(frames_with_ml_outliers, key=lambda x: x["frame"])
+
+            return JSONResponse(response_data)
         else:
             return JSONResponse({
                 "status": "passed",
                 "job_id": job_id,
-                "message": "No issues detected"
+                "message": "No issues detected",
+                "ml_detection_used": ml_detection_used,
+                "ml_model_path": ml_model_path
             })
 
     except Exception as e:
-        print(f"Error in fast_validation_check: {e}")
+        print(f"❌ Error in fast_validation_check: {e}")
         import traceback
         traceback.print_exc()
         return JSONResponse({
             "status": "error",
             "error": str(e)
         }, status_code=500)
+    finally:
+        # Ensure client is closed
+        if client:
+            await client.close()
+
+
+@router.get("/api/test/ml-comparison/{job_id}/{frame_num}")
+async def test_ml_comparison(
+    job_id: int,
+    frame_num: int,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    TEST ONLY - Generate visual comparison of annotations vs ML predictions.
+    Returns a side-by-side PNG image showing:
+    - Left: Human annotations (green boxes)
+    - Right: Model predictions (red=high conf, orange=low conf)
+
+    Usage: GET /api/test/ml-comparison/{job_id}/{frame_num}
+    """
+    client = None
+    try:
+        print(f"🧪 TEST: Generating ML comparison for job {job_id}, frame {frame_num}")
+
+        # Initialize CVAT client
+        client = CVATClient(user.cvat_host, user.cvat_token)
+
+        # Get job info
+        job_obj = await client.get_job(job_id)
+        if not job_obj:
+            return JSONResponse({
+                "error": f"Job {job_id} not found"
+            }, status_code=404)
+
+        task_id = job_obj.task_id
+
+        # Get task info for project_id
+        task_obj = await client.get_task(task_id)
+        project_id = task_obj.project_id if task_obj else None
+
+        # Get all annotations for the job
+        print(f"🧪 TEST: Fetching annotations for job {job_id}")
+        annotations = await client.get_job_annotations_with_boxes(job_id)
+        frames = annotations.get("frames", {})
+
+        print(f"🧪 TEST: Job has {len(frames)} frames with annotations")
+        print(f"🧪 TEST: Frame keys type: {type(list(frames.keys())[0]) if frames else 'N/A'}")
+        print(f"🧪 TEST: Available frames: {sorted(list(frames.keys()))[:10]}...")  # Show first 10
+        print(f"🧪 TEST: Looking for frame: {frame_num} (type: {type(frame_num)})")
+
+        # Check if frame exists in job's annotations
+        # Note: frames dict has integer keys, not string keys
+        if frame_num not in frames:
+            available_frames = sorted(list(frames.keys()))
+            frame_range = f"{available_frames[0]}-{available_frames[-1]}" if available_frames else "none"
+            return JSONResponse({
+                "error": f"Frame {frame_num} not found in job {job_id}",
+                "debug": {
+                    "requested_frame": frame_num,
+                    "requested_frame_type": str(type(frame_num)),
+                    "job_id": job_id,
+                    "task_id": task_id,
+                    "total_frames_with_annotations": len(frames),
+                    "frame_range": frame_range,
+                    "sample_frames": available_frames[:20],
+                    "frame_keys_type": str(type(available_frames[0])) if available_frames else "N/A"
+                }
+            }, status_code=404)
+
+        # Extract bounding boxes for this frame
+        boxes = []
+        for shape in frames[frame_num]:
+            from app.api.routes import get_bbox_from_points
+            bbox = get_bbox_from_points(shape.get("points", []), shape.get("type", ""))
+            if bbox:
+                boxes.append({
+                    "id": shape.get("id"),
+                    "bbox": bbox,
+                    "label_id": shape.get("label_id")
+                })
+
+        if not boxes:
+            return JSONResponse({
+                "error": f"No annotations found in frame {frame_num}. Frame exists but has no bounding boxes."
+            }, status_code=404)
+
+        # Get ML detector
+        ml_detector = get_ml_detector(
+            project_id=project_id,
+            cvat_host=user.cvat_host
+        )
+
+        if not ml_detector.is_available():
+            return JSONResponse({
+                "error": "ML detector not available (model not loaded)"
+            }, status_code=503)
+
+        # Fetch frame image
+        image_bytes = await ml_detector.get_frame_image(client, task_id, frame_num)
+        if not image_bytes:
+            return JSONResponse({
+                "error": f"Could not fetch image for frame {frame_num}"
+            }, status_code=404)
+
+        # Run inference with optimized settings
+        predictions = ml_detector.run_inference(
+            image_bytes,
+            conf_threshold=0.25,
+            imgsz=416  # Use smaller size for faster inference
+        )
+
+        print(f"🧪 TEST: Found {len(boxes)} annotations and {len(predictions)} predictions")
+
+        # Create comparison image
+        comparison_img = ml_detector.create_comparison_image(
+            image_bytes,
+            boxes,
+            predictions
+        )
+
+        if not comparison_img:
+            return JSONResponse({
+                "error": "Failed to create comparison image"
+            }, status_code=500)
+
+        print(f"🧪 TEST: Comparison image generated successfully")
+
+        # Return as PNG image
+        return Response(
+            content=comparison_img,
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f"inline; filename=ml_comparison_job{job_id}_frame{frame_num}.png"
+            }
+        )
+
+    except Exception as e:
+        print(f"❌ Error in test_ml_comparison: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            "error": str(e)
+        }, status_code=500)
+    finally:
+        if client:
+            await client.close()
 
 
 @router.get("/api/task/{task_id}/pre-acceptance-check")

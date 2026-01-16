@@ -297,12 +297,45 @@
         </div>
         <div class="apple-modal-body">
             <!-- Loading State -->
-            <div id="fast-validation-loading" class="text-center py-8">
-                <div class="inline-flex items-center gap-3">
-                    <svg class="w-6 h-6 animate-spin text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                    </svg>
-                    <span class="apple-body text-gray-600">Running validation checks...</span>
+            <div id="fast-validation-loading" class="py-8">
+                <div class="text-center mb-4">
+                    <div class="inline-flex items-center gap-3">
+                        <svg class="w-6 h-6 animate-spin text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        <span class="apple-body text-gray-600">Running validation checks...</span>
+                    </div>
+                </div>
+
+                <!-- Progress Status -->
+                <div id="fast-validation-progress" class="max-w-md mx-auto space-y-2">
+                    <div class="flex items-center gap-2 text-sm">
+                        <div id="progress-icon-fetch" class="w-4 h-4">
+                            <svg class="animate-spin text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                        <span id="progress-text-fetch" class="text-gray-600">Fetching annotations...</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-sm hidden" id="progress-step-geometric">
+                        <div id="progress-icon-geometric" class="w-4 h-4">
+                            <svg class="animate-spin text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                        <span id="progress-text-geometric" class="text-gray-600">Running geometric checks...</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-sm hidden" id="progress-step-ml">
+                        <div id="progress-icon-ml" class="w-4 h-4">
+                            <svg class="animate-spin text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                        <span id="progress-text-ml" class="text-gray-600">Running ML detection...</span>
+                    </div>
                 </div>
             </div>
 
@@ -361,6 +394,17 @@
                         <!-- Will be populated by JS -->
                     </div>
 
+                    <!-- ML Detection Badge -->
+                    <div id="ml-detection-badge" class="hidden mb-4">
+                        <div class="inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                            </svg>
+                            <span class="font-medium">ML Detection Active</span>
+                            <span class="model-info text-xs text-blue-600 opacity-75"></span>
+                        </div>
+                    </div>
+
                     <!-- Issues Details (collapsible) -->
                     <div class="mb-6">
                         <button type="button" onclick="toggleIssueDetails()" class="apple-btn apple-btn-ghost apple-btn-sm w-full justify-between" id="toggle-details-btn">
@@ -378,9 +422,23 @@
                                 </div>
                             </div>
                             <!-- Outliers Section -->
-                            <div id="outliers-section" class="hidden">
+                            <div id="outliers-section" class="hidden mb-4">
                                 <h4 class="apple-footnote font-medium text-gray-700 mb-2">Centroid Outliers</h4>
                                 <div id="outliers-list" class="space-y-1">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
+                            <!-- ML Outliers Section -->
+                            <div id="ml-outliers-section" class="hidden">
+                                <h4 class="apple-footnote font-medium text-gray-700 mb-2">
+                                    <span class="inline-flex items-center gap-1">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                        </svg>
+                                        ML-Detected Outliers
+                                    </span>
+                                </h4>
+                                <div id="ml-outliers-list" class="space-y-1">
                                     <!-- Populated by JS -->
                                 </div>
                             </div>
@@ -604,33 +662,93 @@ async function runFastValidation(queueId, cvatJobId, cvatTaskId, cvatHost) {
     issues.classList.add('hidden');
     error.classList.add('hidden');
 
+    // Reset progress steps
+    document.getElementById('progress-step-geometric').classList.add('hidden');
+    document.getElementById('progress-step-ml').classList.add('hidden');
+    document.getElementById('progress-text-fetch').textContent = 'Fetching annotations...';
+
     modal.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
 
     try {
-        const response = await fetch(`/api/job/${cvatJobId}/fast-validation?threshold=0.5`);
-        const data = await response.json();
+        console.log('Starting fast validation for job:', cvatJobId);
 
+        // Start fetch with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => {
+            console.error('Request timeout after 2 minutes');
+            controller.abort();
+        }, 120000); // 2 minute timeout
+
+        const response = await fetch(`/api/job/${cvatJobId}/fast-validation?threshold=0.5`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        console.log('Response received:', response.status);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Response not OK:', response.status, errorText);
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Data received:', data);
+
+        // Update progress to show annotations fetched
+        document.getElementById('progress-text-fetch').textContent = 'Annotations fetched ✓';
+        document.getElementById('progress-icon-fetch').innerHTML = '<svg class="text-green-500 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+
+        // Show geometric check step
+        document.getElementById('progress-step-geometric').classList.remove('hidden');
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        document.getElementById('progress-text-geometric').textContent = 'Geometric checks complete ✓';
+        document.getElementById('progress-icon-geometric').innerHTML = '<svg class="text-green-500 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+
+        // Show ML step if ML was used
+        if (data.ml_detection_used) {
+            document.getElementById('progress-step-ml').classList.remove('hidden');
+            await new Promise(resolve => setTimeout(resolve, 300));
+            document.getElementById('progress-text-ml').textContent = 'ML detection complete ✓';
+            document.getElementById('progress-icon-ml').innerHTML = '<svg class="text-green-500 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 400));
+
+        console.log('Showing results, status:', data.status);
+
+        // Hide loading and show results
         loading.classList.add('hidden');
         results.classList.remove('hidden');
 
         if (data.status === 'passed') {
+            console.log('Job passed validation');
             passed.classList.remove('hidden');
             // Set CVAT link for passed state too
             const cvatLinkPassed = document.getElementById('fast-validation-cvat-link-passed');
             cvatLinkPassed.href = `${fastValidationData.cvatHost}/tasks/${fastValidationData.cvatTaskId}/jobs/${fastValidationData.cvatJobId}`;
         } else if (data.status === 'issues_found') {
+            console.log('Issues found, rendering...');
             issues.classList.remove('hidden');
             renderFastValidationIssues(data);
         } else if (data.status === 'error') {
+            console.log('Validation error:', data.error);
             error.classList.remove('hidden');
             document.getElementById('fast-validation-error-msg').textContent = data.error || 'An unknown error occurred';
         }
     } catch (err) {
+        console.error('Fast validation error:', err);
+        console.error('Error stack:', err.stack);
         loading.classList.add('hidden');
         results.classList.remove('hidden');
         error.classList.remove('hidden');
-        document.getElementById('fast-validation-error-msg').textContent = err.message || 'Network error';
+
+        if (err.name === 'AbortError') {
+            document.getElementById('fast-validation-error-msg').textContent = 'Request timed out after 2 minutes. Please try again.';
+        } else {
+            document.getElementById('fast-validation-error-msg').textContent = err.message || 'Network error';
+        }
     }
 }
 
@@ -639,9 +757,25 @@ function renderFastValidationIssues(data) {
     const cvatLink = document.getElementById('fast-validation-cvat-link');
     cvatLink.href = `${fastValidationData.cvatHost}/tasks/${fastValidationData.cvatTaskId}/jobs/${fastValidationData.cvatJobId}`;
 
-    // Update summary
+    // Show ML detection badge if ML was used
+    const mlBadge = document.getElementById('ml-detection-badge');
+    if (data.ml_detection_used) {
+        mlBadge.classList.remove('hidden');
+        // Update badge with model path if available
+        if (data.ml_model_path) {
+            const modelName = data.ml_model_path.split('/').pop();
+            const modelInfo = mlBadge.querySelector('.model-info');
+            if (modelInfo) {
+                modelInfo.textContent = modelName;
+            }
+        }
+    } else {
+        mlBadge.classList.add('hidden');
+    }
+
+    // Update summary - include ML outliers if present
     const summary = document.getElementById('fast-validation-summary');
-    summary.innerHTML = `
+    let summaryCards = `
         <div class="apple-stat-card-sm">
             <p class="apple-footnote text-gray-500">Overlap Frames</p>
             <p class="apple-body font-semibold ${data.total_overlap_frames > 0 ? 'text-orange-600' : 'text-gray-400'}">${data.total_overlap_frames || 0}</p>
@@ -651,6 +785,18 @@ function renderFastValidationIssues(data) {
             <p class="apple-body font-semibold ${data.total_outlier_frames > 0 ? 'text-orange-600' : 'text-gray-400'}">${data.total_outlier_frames || 0}</p>
         </div>
     `;
+
+    // Add ML outliers card if available
+    if (data.total_ml_outlier_frames !== undefined) {
+        summaryCards += `
+        <div class="apple-stat-card-sm col-span-2">
+            <p class="apple-footnote text-gray-500">ML-Detected Outliers</p>
+            <p class="apple-body font-semibold ${data.total_ml_outlier_frames > 0 ? 'text-blue-600' : 'text-gray-400'}">${data.total_ml_outlier_frames || 0} frames (${data.total_ml_outliers || 0} boxes)</p>
+        </div>
+        `;
+    }
+
+    summary.innerHTML = summaryCards;
 
     // Render overlaps
     const overlapsSection = document.getElementById('overlaps-section');
@@ -680,6 +826,84 @@ function renderFastValidationIssues(data) {
         `).join('');
     } else {
         outliersSection.classList.add('hidden');
+    }
+
+    // Render ML outliers with detailed information
+    const mlOutliersSection = document.getElementById('ml-outliers-section');
+    const mlOutliersList = document.getElementById('ml-outliers-list');
+    if (data.frames_with_ml_outliers && data.frames_with_ml_outliers.length > 0) {
+        mlOutliersSection.classList.remove('hidden');
+        mlOutliersList.innerHTML = data.frames_with_ml_outliers.map(frame => {
+            let detailsHtml = '';
+
+            // Show details for each outlier
+            if (frame.outlier_details && frame.outlier_details.length > 0) {
+                detailsHtml = frame.outlier_details.map(detail => {
+                    const reason = detail.reason === 'no_match'
+                        ? '🔴 No matching prediction'
+                        : '🟡 Low confidence match';
+
+                    const iouDisplay = detail.iou > 0
+                        ? `IoU: ${(detail.iou * 100).toFixed(1)}%`
+                        : 'IoU: 0%';
+
+                    let predInfo = '';
+                    if (detail.best_prediction) {
+                        const pred = detail.best_prediction;
+                        predInfo = `
+                            <div class="mt-1 text-xs text-gray-600 pl-4">
+                                <div>Model predicted: <span class="font-medium">${pred.class_name || 'class ' + pred.class_id}</span> (conf: ${(pred.confidence * 100).toFixed(1)}%)</div>
+                                <div>${iouDisplay}</div>
+                            </div>
+                        `;
+                    } else {
+                        predInfo = `<div class="mt-1 text-xs text-gray-500 pl-4">No model prediction found</div>`;
+                    }
+
+                    return `
+                        <div class="mt-2 pl-2 border-l-2 border-blue-300">
+                            <div class="text-xs">
+                                <span class="font-medium">Box ID ${detail.annotation_id}</span>
+                                <span class="ml-2">${reason}</span>
+                            </div>
+                            ${predInfo}
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Add visual inspection link (TEST ONLY)
+            const visualLink = `
+                <a href="/api/test/ml-comparison/${data.job_id}/${frame.frame}"
+                   target="_blank"
+                   class="inline-flex items-center ml-2 text-xs text-indigo-600 hover:text-indigo-800 underline">
+                    <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    Visual
+                </a>
+            `;
+
+            return `
+                <div class="bg-blue-50 rounded px-3 py-2 text-sm mb-2">
+                    <div class="flex items-center">
+                        <span class="font-medium">Frame ${frame.frame}</span>
+                        <span class="text-gray-500 ml-2">${frame.outlier_count} outlier(s)</span>
+                        <span class="inline-flex items-center ml-2 text-blue-600 text-xs">
+                            <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                            </svg>
+                            ML
+                        </span>
+                        ${visualLink}
+                    </div>
+                    ${detailsHtml}
+                </div>
+            `;
+        }).join('');
+    } else {
+        mlOutliersSection.classList.add('hidden');
     }
 }
 

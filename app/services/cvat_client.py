@@ -233,6 +233,58 @@ class CVATClient:
             frame_count=j.get("stop_frame", 0) - j.get("start_frame", 0) + 1
         )
 
+    async def get_task(self, task_id: int) -> Optional[Task]:
+        """Fetch a single task by ID."""
+        client = await self._get_client()
+        response = await client.get(f"/api/tasks/{task_id}")
+
+        if response.status_code != 200:
+            return None
+
+        t = response.json()
+        assignee = t.get("assignee")
+        return Task(
+            id=t["id"],
+            name=t["name"],
+            project_id=t.get("project_id"),
+            status=t.get("status", "annotation"),
+            size=t.get("size", 0),
+            assignee=assignee.get("username") if assignee else None,
+            created_date=t.get("created_date")
+        )
+
+    async def get_frame_image(self, task_id: int, frame_num: int) -> Optional[bytes]:
+        """
+        Fetch a frame image from CVAT task.
+
+        Args:
+            task_id: Task ID
+            frame_num: Frame number
+
+        Returns:
+            Image bytes or None if failed
+        """
+        client = await self._get_client()
+        try:
+            response = await client.get(
+                f"/api/tasks/{task_id}/data",
+                params={
+                    "type": "frame",
+                    "number": frame_num,
+                    "quality": "original"
+                }
+            )
+
+            if response.status_code == 200:
+                return response.content
+            else:
+                print(f"Failed to fetch frame {frame_num} from task {task_id}: HTTP {response.status_code}")
+                return None
+
+        except Exception as e:
+            print(f"Error fetching frame image: {e}")
+            return None
+
     async def validate_token(self) -> bool:
         """Check if current token is valid."""
         if not self.token:

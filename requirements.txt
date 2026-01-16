@@ -24,3 +24,7 @@ httpx==0.26.0
 
 # Environment
 python-dotenv==1.0.0
+
+# ML-based Outlier Detection
+ultralytics>=8.0.0
+Pillow>=10.0.0
