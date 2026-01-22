@@ -442,6 +442,20 @@
                                     <!-- Populated by JS -->
                                 </div>
                             </div>
+                            <!-- Bucket Outliers Section -->
+                            <div id="bucket-outliers-section" class="hidden mb-4">
+                                <h4 class="apple-footnote font-medium text-gray-700 mb-2">
+                                    <span class="inline-flex items-center gap-1">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                        </svg>
+                                        Outside Bucket Region
+                                    </span>
+                                </h4>
+                                <div id="bucket-outliers-list" class="space-y-1">
+                                    <!-- Populated by JS -->
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -796,6 +810,23 @@ function renderFastValidationIssues(data) {
         `;
     }
 
+    // Add Bucket outliers card if available
+    if (data.total_bucket_outlier_frames !== undefined) {
+        summaryCards += `
+        <div class="apple-stat-card-sm col-span-2">
+            <p class="apple-footnote text-gray-500">
+                <span class="inline-flex items-center gap-1">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                    </svg>
+                    Outside Bucket Region
+                </span>
+            </p>
+            <p class="apple-body font-semibold ${data.total_bucket_outlier_frames > 0 ? 'text-orange-600' : 'text-gray-400'}">${data.total_bucket_outlier_frames || 0} frames (${data.total_bucket_outliers || 0} boxes)</p>
+        </div>
+        `;
+    }
+
     summary.innerHTML = summaryCards;
 
     // Render overlaps
@@ -904,6 +935,74 @@ function renderFastValidationIssues(data) {
         }).join('');
     } else {
         mlOutliersSection.classList.add('hidden');
+    }
+
+    // Render Bucket outliers (annotations outside bucket region)
+    const bucketOutliersSection = document.getElementById('bucket-outliers-section');
+    const bucketOutliersList = document.getElementById('bucket-outliers-list');
+    if (data.frames_with_bucket_outliers && data.frames_with_bucket_outliers.length > 0) {
+        bucketOutliersSection.classList.remove('hidden');
+        bucketOutliersList.innerHTML = data.frames_with_bucket_outliers.map(frame => {
+            let detailsHtml = '';
+
+            // Show details for each outlier
+            if (frame.outlier_details && frame.outlier_details.length > 0) {
+                detailsHtml = frame.outlier_details.map(detail => {
+                    const distanceInfo = detail.distance_to_bucket > 0
+                        ? `${detail.distance_to_bucket.toFixed(0)}px from bucket`
+                        : 'At bucket edge';
+
+                    const overlapInfo = detail.overlap_percentage > 0
+                        ? `Overlap: ${detail.overlap_percentage}%`
+                        : 'No overlap';
+
+                    return `
+                        <div class="mt-2 pl-2 border-l-2 border-orange-300">
+                            <div class="text-xs">
+                                <span class="font-medium">Box ID ${detail.annotation_id}</span>
+                                <span class="ml-2 text-orange-600">🚫 Outside bucket</span>
+                            </div>
+                            <div class="mt-1 text-xs text-gray-600 pl-4">
+                                <div>${distanceInfo}</div>
+                                <div>${overlapInfo}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Visual link for bucket validation
+            const visualLink = `
+                <a href="/api/test/ml-comparison/${data.job_id}/${frame.frame}"
+                   target="_blank"
+                   class="inline-flex items-center ml-2 text-xs text-indigo-600 hover:text-indigo-800 underline">
+                    <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    Visual
+                </a>
+            `;
+
+            return `
+                <div class="bg-orange-50 rounded px-3 py-2 text-sm mb-2">
+                    <div class="flex items-center">
+                        <span class="font-medium">Frame ${frame.frame}</span>
+                        <span class="text-gray-500 ml-2">${frame.outlier_count}/${frame.total_annotations} outside bucket</span>
+                        <span class="inline-flex items-center ml-2 text-orange-600 text-xs">
+                            <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                            </svg>
+                            Bucket
+                        </span>
+                        ${visualLink}
+                    </div>
+                    ${detailsHtml}
+                </div>
+            `;
+        }).join('');
+    } else {
+        bucketOutliersSection.classList.add('hidden');
     }
 }
 

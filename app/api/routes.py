@@ -2108,6 +2108,38 @@ async def fast_validation_check(
                     # Add note if frames were limited
                     if total_frames > 5:
                         print(f"ℹ️  Note: ML detection ran on {len(frames_to_check)}/{total_frames} frames for performance")
+
+                    # ==================== BUCKET VALIDATION ====================
+                    # Run bucket validation on ALL frames with optimized parallel processing
+                    print(f"🪣 Starting Bucket Validation for all {total_frames} frames...")
+
+                    bucket_start = time.time()
+                    bucket_results = await ml_detector.detect_bucket_outliers_parallel(
+                        cvat_client=client,
+                        task_id=task_id,
+                        frame_annotations=frame_annotations_for_ml,  # All frames
+                        conf_threshold=0.25,
+                        bucket_class_names=None,  # Use default bucket class names
+                        min_overlap_pct=25.0,
+                        chunk_size=50,  # Process 50 frames per batch (batch inference is fast)
+                        max_workers=1   # Not used anymore (batch inference handles parallelism)
+                    )
+                    bucket_elapsed = time.time() - bucket_start
+                    print(f"⏱️  Bucket Validation completed in {bucket_elapsed:.2f}s ({bucket_elapsed/max(1,total_frames):.3f}s per frame)")
+
+                    # Convert bucket outliers to response format
+                    frames_with_bucket_outliers = []
+                    for frame_num, result in bucket_results.items():
+                        if result.get("status") == "validated" and result.get("invalid_count", 0) > 0:
+                            frames_with_bucket_outliers.append({
+                                "frame": frame_num,
+                                "outlier_box_ids": [ann["annotation_id"] for ann in result.get("invalid_annotations", [])],
+                                "outlier_count": result["invalid_count"],
+                                "total_annotations": result["total_annotations"],
+                                "detection_method": "bucket",
+                                "outlier_details": result.get("invalid_annotations", [])
+                            })
+
                 else:
                     print(f"⚠️  ML Detection requested but no model available for job {job_id} (project {project_id})")
             except Exception as ml_error:
@@ -2119,7 +2151,8 @@ async def fast_validation_check(
         has_overlaps = len(frames_with_overlaps) > 0
         has_outliers = len(frames_with_outliers) > 0
         has_ml_outliers = len(frames_with_ml_outliers) > 0
-        has_issues = has_overlaps or has_outliers or has_ml_outliers
+        has_bucket_outliers = 'frames_with_bucket_outliers' in dir() and len(frames_with_bucket_outliers) > 0
+        has_issues = has_overlaps or has_outliers or has_ml_outliers or has_bucket_outliers
 
         if has_issues:
             response_data = {
@@ -2140,6 +2173,12 @@ async def fast_validation_check(
                 response_data["total_ml_outlier_frames"] = len(frames_with_ml_outliers)
                 response_data["total_ml_outliers"] = sum(f["outlier_count"] for f in frames_with_ml_outliers)
                 response_data["frames_with_ml_outliers"] = sorted(frames_with_ml_outliers, key=lambda x: x["frame"])
+
+            # Add bucket validation outliers if available
+            if has_bucket_outliers:
+                response_data["total_bucket_outlier_frames"] = len(frames_with_bucket_outliers)
+                response_data["total_bucket_outliers"] = sum(f["outlier_count"] for f in frames_with_bucket_outliers)
+                response_data["frames_with_bucket_outliers"] = sorted(frames_with_bucket_outliers, key=lambda x: x["frame"])
 
             return JSONResponse(response_data)
         else:
